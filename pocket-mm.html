@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pocket Mystery Maze</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel for on-the-fly JSX compilation -->
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #dcdde0; }
+        /* Prevent pull-to-refresh on mobile */
+        html, body { overscroll-behavior: none; touch-action: none; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const GRID_SIZE = 5;
+
+        // --- RETRO SPRITE BITMASKS (10x10 grids) ---
+        const STAR_SPRITE = [
+          [0,0,0,0,2,2,0,0,0,0], [0,0,0,2,1,1,2,0,0,0], [2,2,2,2,1,1,2,2,2,2], [0,2,1,1,1,1,1,1,2,0],
+          [0,0,2,1,1,1,1,2,0,0], [0,0,2,1,1,1,1,2,0,0], [0,2,1,1,2,2,1,1,2,0], [2,1,1,2,0,0,2,1,1,2],
+          [0,2,2,0,0,0,0,2,2,0], [0,0,0,0,0,0,0,0,0,0]
+        ];
+
+        const HEART_SPRITE = [
+          [0,0,2,2,0,0,2,2,0,0], [0,2,1,1,2,2,1,1,2,0], [2,1,1,1,1,1,1,1,1,2], [2,1,1,1,1,1,1,1,1,2],
+          [2,1,1,1,1,1,1,1,1,2], [0,2,1,1,1,1,1,1,2,0], [0,0,2,1,1,1,1,2,0,0], [0,0,0,2,1,1,2,0,0,0],
+          [0,0,0,0,2,2,0,0,0,0], [0,0,0,0,0,0,0,0,0,0]
+        ];
+
+        // Sleek Arrowhead Shapes
+        const ARROW_UP = [
+          [0,0,0,0,2,2,0,0,0,0],
+          [0,0,0,2,1,1,2,0,0,0],
+          [0,0,2,1,1,1,1,2,0,0],
+          [0,2,1,1,1,1,1,1,2,0],
+          [2,1,1,1,1,1,1,1,1,2],
+          [2,2,2,1,1,1,1,2,2,2],
+          [0,0,2,1,1,1,1,2,0,0],
+          [0,0,2,1,1,1,1,2,0,0],
+          [0,0,0,2,2,2,2,0,0,0],
+          [0,0,0,0,0,0,0,0,0,0]
+        ];
+
+        const ARROW_DOWN = [
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,0,2,2,2,2,0,0,0],
+          [0,0,2,1,1,1,1,2,0,0],
+          [0,0,2,1,1,1,1,2,0,0],
+          [2,2,2,1,1,1,1,2,2,2],
+          [2,1,1,1,1,1,1,1,1,2],
+          [0,2,1,1,1,1,1,1,2,0],
+          [0,0,2,1,1,1,1,2,0,0],
+          [0,0,0,2,1,1,2,0,0,0],
+          [0,0,0,0,2,2,0,0,0,0]
+        ];
+
+        const ARROW_LEFT = [
+          [0,0,0,0,2,2,0,0,0,0],
+          [0,0,0,2,1,2,0,0,0,0],
+          [0,0,2,1,1,2,0,0,0,0],
+          [0,2,1,1,1,1,2,2,2,0],
+          [2,1,1,1,1,1,1,1,1,2],
+          [2,1,1,1,1,1,1,1,1,2],
+          [0,2,1,1,1,1,2,2,2,0],
+          [0,0,2,1,1,2,0,0,0,0],
+          [0,0,0,2,1,2,0,0,0,0],
+          [0,0,0,0,2,2,0,0,0,0]
+        ];
+
+        const ARROW_RIGHT = [
+          [0,0,0,0,2,2,0,0,0,0],
+          [0,0,0,0,2,1,2,0,0,0],
+          [0,0,0,0,2,1,1,2,0,0],
+          [0,2,2,2,1,1,1,1,2,0],
+          [2,1,1,1,1,1,1,1,1,2],
+          [2,1,1,1,1,1,1,1,1,2],
+          [0,2,2,2,1,1,1,1,2,0],
+          [0,0,0,0,2,1,1,2,0,0],
+          [0,0,0,0,2,1,2,0,0,0],
+          [0,0,0,0,2,2,0,0,0,0]
+        ];
+
+        const ROBOT_GOOD_1 = [
+          [0,0,0,2,2,2,2,0,0,0],
+          [0,0,2,0,0,0,0,2,0,0],
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,2,2,2,2,2,2,0,0],
+          [0,2,1,1,1,1,1,1,2,0],
+          [0,2,1,2,1,1,2,1,2,0],
+          [0,2,1,1,1,1,1,1,2,0],
+          [0,2,2,2,1,1,2,2,2,0],
+          [0,0,2,2,2,2,2,2,0,0],
+          [0,0,0,0,0,0,0,0,0,0]
+        ];
+
+        const ROBOT_GOOD_2 = [
+          [0,0,0,2,2,2,2,0,0,0],
+          [0,0,2,0,0,0,0,2,0,0],
+          [0,0,0,0,0,0,0,0,0,0],
+          [0,0,2,2,2,2,2,2,0,0],
+          [0,2,1,1,1,1,1,1,2,0],
+          [0,2,1,2,1,1,2,1,2,0],
+          [0,2,1,1,1,1,1,1,2,0],
+          [0,2,2,2,2,2,2,2,2,0],
+          [0,0,2,2,2,2,2,2,0,0],
+          [0,0,0,0,0,0,0,0,0,0]
+        ];
+
+        const ROBOT_EVIL_1 = [
+          [0,0,2,0,0,0,0,2,0,0],
+          [0,2,2,0,0,0,0,2,2,0],
+          [0,0,2,2,2,2,2,2,0,0],
+          [0,2,1,1,1,1,1,1,2,0],
+          [0,2,1,2,2,2,2,1,2,0],
+          [0,2,2,1,1,1,1,2,2,0],
+          [0,2,1,1,1,1,1,1,2,0],
+          [0,2,2,2,1,1,2,2,2,0],
+          [0,0,2,2,2,2,2,2,0,0],
+          [0,0,0,0,0,0,0,0,0,0]
+        ];
+
+        const ROBOT_EVIL_2 = [
+          [0,0,2,0,0,0,0,2,0,0],
+          [0,2,2,0,0,0,0,2,2,0],
+          [0,0,2,2,2,2,2,2,0,0],
+          [0,2,1,1,1,1,1,1,2,0],
+          [0,2,1,2,2,2,2,1,2,0],
+          [0,2,2,1,1,1,1,2,2,0],
+          [0,2,1,1,1,1,1,1,2,0],
+          [0,2,2,2,2,2,2,2,2,0],
+          [0,0,2,2,2,2,2,2,0,0],
+          [0,0,0,0,0,0,0,0,0,0]
+        ];
+
+        const PLAYER_1 = [
+          [0,2,2,2,2,2,2,0,0,0], [2,1,1,1,1,1,1,2,0,0], [2,2,2,2,2,2,2,2,0,0], [2,0,0,0,0,0,0,2,0,0],
+          [2,1,1,1,1,1,1,2,0,0], [2,1,1,2,2,1,1,2,0,0], [2,1,1,1,1,1,1,2,0,0], [2,2,1,2,2,1,2,2,0,0],
+          [0,2,2,2,2,2,2,0,0,0], [0,0,0,0,0,0,0,0,0,0]
+        ];
+
+        const PLAYER_2 = [
+          [0,2,2,2,2,2,2,0,0,0], [2,1,1,1,1,1,1,2,0,0], [2,2,2,2,2,2,2,2,0,0], [2,0,0,0,0,0,0,2,0,0],
+          [2,1,1,1,1,1,1,2,0,0], [2,1,2,2,2,2,1,2,0,0], [2,1,1,1,1,1,1,2,0,0], [2,2,1,2,2,1,2,2,0,0],
+          [0,2,2,2,2,2,2,0,0,0], [0,0,0,0,0,0,0,0,0,0]
+        ];
+
+        const getRandomPos = () => ({ x: Math.floor(Math.random() * GRID_SIZE), y: Math.floor(Math.random() * GRID_SIZE) });
+
+        const getInitialFacing = (pos) => {
+          if (pos.x === 0) return 'RIGHT';
+          if (pos.x === GRID_SIZE - 1) return 'LEFT';
+          if (pos.y === 0) return 'DOWN';
+          if (pos.y === GRID_SIZE - 1) return 'UP';
+          return 'RIGHT';
+        };
+
+        const getWallCheck = (x, y, dir, hw, vw) => {
+          if (dir === 'UP') return y === 0 ? 1 : hw[y - 1][x];
+          if (dir === 'DOWN') return y === GRID_SIZE - 1 ? 1 : hw[y][x];
+          if (dir === 'LEFT') return x === 0 ? 1 : vw[y][x - 1];
+          if (dir === 'RIGHT') return x === GRID_SIZE - 1 ? 1 : vw[y][x];
+          return 1;
+        };
+
+        const getNextStep = (startX, startY, targetX, targetY, hw, vw) => {
+          const visited = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
+          const queue = [{ x: startX, y: startY, path: [] }];
+          visited[startY][startX] = true;
+
+          while (queue.length > 0) {
+            const { x, y, path } = queue.shift();
+            if (x === targetX && y === targetY) return path[0];
+
+            const dirs = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+            for (let dir of dirs) {
+              const wall = getWallCheck(x, y, dir, hw, vw);
+              if (wall !== 1) { 
+                let nx = x, ny = y;
+                if (dir === 'UP') ny--; if (dir === 'DOWN') ny++;
+                if (dir === 'LEFT') nx--; if (dir === 'RIGHT') nx++;
+
+                if (ny >= 0 && ny < GRID_SIZE && nx >= 0 && nx < GRID_SIZE && !visited[ny][nx]) {
+                  visited[ny][nx] = true;
+                  queue.push({ x: nx, y: ny, path: [...path, dir] });
+                }
+              }
+            }
+          }
+          return null;
+        };
+
+        const checkReachability = (startX, startY, targetX, targetY, testHWalls, testVWalls, avoidX = -1, avoidY = -1) => {
+          if (startX === targetX && startY === targetY) return true;
+          if (startX === avoidX && startY === avoidY) return false;
+
+          const visited = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
+          const queue = [{ x: startX, y: startY }];
+          visited[startY][startX] = true;
+          
+          if (avoidX !== -1 && avoidY !== -1) {
+            visited[avoidY][avoidX] = true; 
+          }
+
+          while (queue.length > 0) {
+            const { x, y } = queue.shift();
+            if (x === targetX && y === targetY) return true;
+            if (y > 0 && testHWalls[y - 1][x] !== 1 && !visited[y - 1][x]) { visited[y - 1][x] = true; queue.push({ x, y: y - 1 }); }
+            if (y < GRID_SIZE - 1 && testHWalls[y][x] !== 1 && !visited[y + 1][x]) { visited[y + 1][x] = true; queue.push({ x, y: y + 1 }); }
+            if (x > 0 && testVWalls[y][x - 1] !== 1 && !visited[y][x - 1]) { visited[y][x - 1] = true; queue.push({ x: x - 1, y }); }
+            if (x < GRID_SIZE - 1 && testVWalls[y][x] !== 1 && !visited[y][x + 1]) { visited[y][x + 1] = true; queue.push({ x: x + 1, y }); }
+          }
+          return false;
+        };
+
+        const generateHiddenMaze = () => {
+          const hw = Array.from({ length: GRID_SIZE - 1 }, () => Array(GRID_SIZE).fill(1));
+          const vw = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE - 1).fill(1));
+          const visited = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
+          
+          const walls = [];
+          const addWalls = (x, y) => {
+            visited[y][x] = true;
+            if (y > 0 && !visited[y-1][x]) walls.push({ x1: x, y1: y, x2: x, y2: y-1, type: 'h', idx: y-1 });
+            if (y < GRID_SIZE-1 && !visited[y+1][x]) walls.push({ x1: x, y1: y, x2: x, y2: y+1, type: 'h', idx: y });
+            if (x > 0 && !visited[y][x-1]) walls.push({ x1: x, y1: y, x2: x-1, y2: y, type: 'v', idx: x-1 });
+            if (x < GRID_SIZE-1 && !visited[y][x+1]) walls.push({ x1: x, y1: y, x2: x+1, y2: y, type: 'v', idx: x }); 
+          };
+
+          addWalls(0, 0);
+          while (walls.length > 0) {
+            const rIdx = Math.floor(Math.random() * walls.length);
+            const { x1, y1, x2, y2, type, idx } = walls.splice(rIdx, 1)[0];
+            if (visited[y2][x2]) continue;
+            if (type === 'h') hw[idx][x1] = 2; else vw[y1][idx] = 2;
+            addWalls(x2, y2);
+          }
+          return { hw, vw };
+        };
+
+        function App() {
+          const [initialData] = useState(() => {
+            const p = getRandomPos();
+            let s = getRandomPos();
+            while (s.x === p.x && s.y === p.y) s = getRandomPos();
+            
+            let c = getRandomPos();
+            while ((c.x === p.x && c.y === p.y) || (c.x === s.x && c.y === s.y)) c = getRandomPos();
+            
+            const v = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
+            v[p.y][p.x] = true;
+
+            let hm = { hw: [], vw: [] };
+            let valid = false;
+            while(!valid) {
+               hm = generateHiddenMaze();
+               valid = checkReachability(p.x, p.y, c.x, c.y, hm.hw, hm.vw, s.x, s.y) && checkReachability(c.x, c.y, s.x, s.y, hm.hw, hm.vw);
+            }
+
+            return { p, s, c, f: getInitialFacing(p), v, hm };
+          });
+
+          const [screen, setScreen] = useState('TITLE'); 
+          const [gameMode, setGameMode] = useState('HERO');
+          const [menuCursor, setMenuCursor] = useState(0);
+          const [isMobile, setIsMobile] = useState(false);
+          const [scale, setScale] = useState(1);
+
+          const [playerPos, setPlayerPos] = useState(initialData.p);
+          const [starPos, setStarPos] = useState(initialData.s);
+          const [heartPos, setHeartPos] = useState(initialData.c);
+          const [facing, setFacing] = useState(initialData.f);
+          const [visited, setVisited] = useState(initialData.v);
+          const [hiddenMaze, setHiddenMaze] = useState(initialData.hm);
+          const [phase, setPhase] = useState('STUDENT_TURN');
+          const [prevPhase, setPrevPhase] = useState(null);
+          const [requestedDir, setRequestedDir] = useState(null);
+          const [score, setScore] = useState(500);
+          const [level, setLevel] = useState(1);
+          const [hp, setHp] = useState(4);
+          
+          const [floatText, setFloatText] = useState(null);
+          const [dialogSpeaker, setDialogSpeaker] = useState('ROBOT'); 
+          const [botAlignment, setBotAlignment] = useState('GOOD');
+          const [botSuggestedDir, setBotSuggestedDir] = useState(null);
+          const [botMessage, setBotMessage] = useState("");
+          
+          // Trap sequence specific states
+          const [trapStep, setTrapStep] = useState('NONE');
+          const [flashToggle, setFlashToggle] = useState(false);
+
+          // Typewriter Animation State
+          const [displayedText, setDisplayedText] = useState("");
+          const [isTyping, setIsTyping] = useState(false);
+          const typingIntervalRef = useRef(null);
+          const fullTextRef = useRef("");
+          
+          const [isWaitingForC, setIsWaitingForC] = useState(false);
+          const [mouthOpen, setMouthOpen] = useState(false);
+          const [yesNoCursor, setYesNoCursor] = useState(0);
+
+          const [hWalls, setHWalls] = useState(Array.from({ length: GRID_SIZE - 1 }, () => Array(GRID_SIZE).fill(0)));
+          const [vWalls, setVWalls] = useState(Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE - 1).fill(0)));
+
+          const canvasRef = useRef(null);
+          const consoleRef = useRef(null);
+
+          // Sync Mouth Animation exactly with the Typewriter
+          useEffect(() => {
+            let interval;
+            if (isTyping) {
+              interval = setInterval(() => setMouthOpen(prev => !prev), 150);
+            } else {
+              setMouthOpen(false);
+            }
+            return () => clearInterval(interval);
+          }, [isTyping]);
+
+          // Flash Toggle interval for the trap sequence
+          useEffect(() => {
+            let interval;
+            if (phase === 'HERO_TRAPPED' && trapStep === 'FLASH') {
+               interval = setInterval(() => setFlashToggle(f => !f), 100);
+            } else {
+               setFlashToggle(false);
+            }
+            return () => clearInterval(interval);
+          }, [phase, trapStep]);
+
+          // Word-by-Word Typewriter Effect
+          useEffect(() => {
+            if (!botMessage) {
+              setIsTyping(false);
+              setDisplayedText("");
+              clearInterval(typingIntervalRef.current);
+              return;
+            }
+            
+            fullTextRef.current = botMessage;
+            const tokens = botMessage.split(/(\s+)/);
+            let currentIndex = 0;
+            setDisplayedText(tokens[0] || "");
+            setIsTyping(true);
+
+            clearInterval(typingIntervalRef.current);
+            typingIntervalRef.current = setInterval(() => {
+              if (currentIndex >= tokens.length - 1) {
+                clearInterval(typingIntervalRef.current);
+                setIsTyping(false);
+              } else {
+                currentIndex++;
+                let textToAdd = tokens[currentIndex];
+                if (/\s+/.test(textToAdd) && currentIndex < tokens.length - 1) {
+                  currentIndex++;
+                  textToAdd += tokens[currentIndex];
+                }
+                setDisplayedText(prev => prev + textToAdd);
+              }
+            }, 150);
+
+            return () => clearInterval(typingIntervalRef.current);
+          }, [botMessage]);
+
+          // ---------------------------------------------------------------------------
+          // THE HERO_TRAPPED SEQUENCE (Execution of the Evil Bot's Trap)
+          // ---------------------------------------------------------------------------
+          useEffect(() => {
+            if (phase === 'HERO_TRAPPED') {
+              if (trapStep === 'FLASH') {
+                 const t = setTimeout(() => {
+                    setHp(h => Math.max(0, h - 1)); // Deduct HP exactly once here
+                    setFloatText({ x: playerPos.x, y: playerPos.y, text: "-1 HP" });
+                    setTrapStep('LAUGH');
+                 }, 1000);
+                 return () => clearTimeout(t);
+              }
+              if (trapStep === 'LAUGH') {
+                 setBotAlignment('EVIL');
+                 setDialogSpeaker('ROBOT');
+                 setBotMessage("HAHAHA! FOOL!");
+                 
+                 const t = setTimeout(() => {
+                    setFloatText(null);
+                    setTrapStep('WARN_CHECK');
+                 }, 2000);
+                 return () => clearTimeout(t);
+              }
+              if (trapStep === 'WARN_CHECK') {
+                 if (hp <= 0) {
+                    setPhase('GAME_OVER');
+                 } else {
+                    setBotAlignment('GOOD');
+                    setDialogSpeaker('ROBOT');
+                    setBotMessage("CAREFUL! EVIL BOT IS A LIAR!");
+                    const t = setTimeout(() => {
+                       setPhase('STUDENT_TURN');
+                       setTrapStep('NONE');
+                       setBotSuggestedDir(null);
+                       setBotMessage(""); // Clears dialog, immediately triggering the next GPS check
+                    }, 2000);
+                    return () => clearTimeout(t);
+                 }
+              }
+            }
+          }, [phase, trapStep, hp, playerPos]);
+
+
+          // Update Hero GPS Bot Message (Hero Mode)
+          useEffect(() => {
+            if (screen === 'GAME' && gameMode === 'HERO' && phase === 'STUDENT_TURN') {
+              // Free will update: Both bots always direct you straight to the Star. Heart is optional.
+              const targetX = starPos.x;
+              const targetY = starPos.y;
+              const nextDir = getNextStep(playerPos.x, playerPos.y, targetX, targetY, hiddenMaze.hw, hiddenMaze.vw);
+              
+              if (nextDir) {
+                 const isEvil = Math.random() < 0.4; // 40% chance of evil bot
+                 setBotAlignment(isEvil ? 'EVIL' : 'GOOD');
+                 
+                 let displayDir = nextDir;
+                 if (isEvil) {
+                    const allDirs = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+                    
+                    // Helper to check if a direction hits the outer boundary of the map
+                    const isBoundary = (dir) => {
+                       if (dir === 'UP' && playerPos.y === 0) return true;
+                       if (dir === 'DOWN' && playerPos.y === GRID_SIZE - 1) return true;
+                       if (dir === 'LEFT' && playerPos.x === 0) return true;
+                       if (dir === 'RIGHT' && playerPos.x === GRID_SIZE - 1) return true;
+                       return false;
+                    };
+
+                    // Evil bot ALWAYS picks a direction that points into an internal wall (not a boundary)
+                    const internalWallDirs = allDirs.filter(d => getWallCheck(playerPos.x, playerPos.y, d, hiddenMaze.hw, hiddenMaze.vw) === 1 && !isBoundary(d));
+                    
+                    if (internalWallDirs.length > 0) {
+                       displayDir = internalWallDirs[Math.floor(Math.random() * internalWallDirs.length)];
+                    } else {
+                       // Fallback: Any wrong direction that is NOT an outer boundary
+                       const nonBoundaryWrongDirs = allDirs.filter(d => d !== nextDir && !isBoundary(d));
+                       if (nonBoundaryWrongDirs.length > 0) {
+                           displayDir = nonBoundaryWrongDirs[Math.floor(Math.random() * nonBoundaryWrongDirs.length)];
+                       } else {
+                           // Absolute fallback (rare edge case)
+                           const wrongDirs = allDirs.filter(d => d !== nextDir);
+                           displayDir = wrongDirs[Math.floor(Math.random() * wrongDirs.length)];
+                       }
+                    }
+                 }
+
+                 setBotSuggestedDir(displayDir); // Save what the bot told us!
+                 setDialogSpeaker('ROBOT');
+                 setBotMessage(`GPS: GO ${displayDir}`);
+              }
+            }
+          }, [playerPos, starPos, gameMode, phase, hiddenMaze, screen]);
+
+          // Update Master AI Logic (Master Mode)
+          useEffect(() => {
+            if (screen === 'GAME' && gameMode === 'MASTER' && phase === 'STUDENT_TURN') {
+              // AI only cares about reaching the exit
+              const targetX = starPos.x;
+              const targetY = starPos.y;
+              const correctDir = getNextStep(playerPos.x, playerPos.y, targetX, targetY, hiddenMaze.hw, hiddenMaze.vw);
+
+              const dirs = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
+              let askDir = correctDir;
+              
+              // 30% chance to make a mistake and ask a wrong direction
+              if (Math.random() < 0.3) {
+                 askDir = dirs[Math.floor(Math.random() * dirs.length)];
+              }
+
+              setBotAlignment('GOOD'); // Master mode only uses the Good bot avatar
+
+              if (askDir) {
+                 const timer = setTimeout(() => {
+                    setFacing(askDir);
+                    setRequestedDir(askDir);
+                    setYesNoCursor(0);
+                    setDialogSpeaker('ROBOT');
+                    setBotMessage(`SHOULD I GO ${askDir}?`);
+                    setIsWaitingForC(true);
+                    setPhase('TEACHER_TURN');
+                 }, 800);
+                 return () => clearTimeout(timer);
+              }
+            }
+          }, [phase, gameMode, playerPos, starPos, hiddenMaze, screen]);
+
+          useEffect(() => {
+            const checkMobile = () => /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
+            const handleResize = () => setIsMobile(checkMobile());
+            handleResize();
+            window.addEventListener('resize', handleResize);
+            return () => window.removeEventListener('resize', handleResize);
+          }, []);
+
+          // Maximize the scale factor flawlessly to the edges of the monitor
+          useEffect(() => {
+            const updateScale = () => {
+              if (!consoleRef.current) { setScale(1); return; }
+              const vw = window.innerWidth, vh = window.innerHeight;
+              
+              const cw = isMobile ? 360 : 340; 
+              const ch = isMobile ? 740 : 400;
+              
+              setScale(Math.max(1, Math.floor(Math.min(vw / cw, vh / ch))));
+            };
+            updateScale();
+            window.addEventListener('resize', updateScale);
+            return () => window.removeEventListener('resize', updateScale);
+          }, [isMobile, screen]);
+
+          const startNewStage = (mode, isReset) => {
+            const p = getRandomPos();
+            let s = getRandomPos();
+            while (s.x === p.x && s.y === p.y) s = getRandomPos();
+            
+            let c = getRandomPos();
+            while ((c.x === p.x && c.y === p.y) || (c.x === s.x && c.y === s.y)) c = getRandomPos();
+            
+            let hm = { hw: [], vw: [] };
+            let valid = false;
+            while(!valid) {
+               hm = generateHiddenMaze();
+               valid = checkReachability(p.x, p.y, c.x, c.y, hm.hw, hm.vw, s.x, s.y) && checkReachability(c.x, c.y, s.x, s.y, hm.hw, hm.vw);
+            }
+
+            const v = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
+            
+            if (mode === 'MASTER' || mode === 'TEACHER') {
+                // Fully reveal the map for Master and Teacher
+                for(let r=0; r<GRID_SIZE; r++) for(let col=0; col<GRID_SIZE; col++) v[r][col] = true;
+            } else {
+                // Dark room for Hero
+                v[p.y][p.x] = true;
+            }
+
+            setPlayerPos(p); setStarPos(s); setHeartPos(c); setFacing(getInitialFacing(p)); 
+            setVisited(v); 
+            
+            if (isReset) {
+                setScore(500);
+                setLevel(1);
+                setHp(4);
+            } else {
+                setLevel(l => l + 1);
+                setHp(h => Math.min(4, h + 1)); 
+            }
+            
+            if (mode === 'MASTER') {
+               // Masters see all walls immediately
+               setHWalls(hm.hw.map(r => [...r]));
+               setVWalls(hm.vw.map(r => [...r]));
+            } else {
+               setHWalls(Array.from({ length: GRID_SIZE - 1 }, () => Array(GRID_SIZE).fill(0)));
+               setVWalls(Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE - 1).fill(0)));
+            }
+            
+            setBotAlignment('GOOD');
+            setBotSuggestedDir(null);
+            setTrapStep('NONE');
+            
+            setPhase('STUDENT_TURN'); setRequestedDir(null); 
+            setBotMessage(""); setIsWaitingForC(false); setDialogSpeaker('ROBOT');
+            setFloatText(null);
+            setHiddenMaze(hm);
+          };
+
+          const resetGame = (overrideMode) => {
+            startNewStage(overrideMode || gameMode, true);
+          };
+
+          const getWall = (x, y, dir, hw, vw) => {
+            if (dir === 'UP') return y === 0 ? 1 : hw[y - 1][x];
+            if (dir === 'DOWN') return y === GRID_SIZE - 1 ? 1 : hw[y][x];
+            if (dir === 'LEFT') return x === 0 ? 1 : vw[y][x - 1];
+            if (dir === 'RIGHT') return x === GRID_SIZE - 1 ? 1 : vw[y][x];
+            return 1;
+          };
+
+          const setWallState = (x, y, dir, val) => {
+            const nh = hWalls.map(r => [...r]), nv = vWalls.map(r => [...r]);
+            if (dir === 'UP' && y > 0) { nh[y - 1][x] = val; setHWalls(nh); }
+            else if (dir === 'DOWN' && y < GRID_SIZE - 1) { nh[y][x] = val; setHWalls(nh); }
+            else if (dir === 'LEFT' && x > 0) { nv[y][x - 1] = val; setVWalls(nv); }
+            else if (dir === 'RIGHT' && x < GRID_SIZE - 1) { nv[y][x] = val; setVWalls(nv); }
+          };
+
+          const movePlayer = (dir) => {
+            let { x, y } = playerPos;
+            if (dir === 'UP') y -= 1; if (dir === 'DOWN') y += 1; if (dir === 'LEFT') x -= 1; if (dir === 'RIGHT') x += 1;
+            setPlayerPos({ x, y });
+            setScore(prev => Math.max(0, prev - 10));
+            
+            if (heartPos && x === heartPos.x && y === heartPos.y) {
+                setHp(prev => Math.min(4, prev + 2));
+                setHeartPos(null);
+                setFloatText({ x, y, text: "+2 HP" });
+                setTimeout(() => setFloatText(null), 1000);
+            }
+            
+            setVisited(prev => { const n = prev.map(r => [...r]); n[y][x] = true; return n; });
+            
+            if (x === starPos.x && y === starPos.y) setPhase('LEVEL_CLEAR');
+            else { setPhase('STUDENT_TURN'); setBotMessage(""); setIsWaitingForC(false); }
+          };
+
+          const askDirection = (dir) => {
+            if (phase !== 'STUDENT_TURN') return;
+            if (gameMode === 'MASTER') return; // AI controls movement in Master Mode
+            
+            setFacing(dir);
+
+            if (gameMode === 'HERO') {
+              
+              const hiddenWall = getWallCheck(playerPos.x, playerPos.y, dir, hiddenMaze.hw, hiddenMaze.vw);
+              
+              if (hiddenWall === 1) {
+                 // BONK! Hit a hidden wall.
+                 setWallState(playerPos.x, playerPos.y, dir, 1); 
+                 setScore(s => Math.max(0, s - 20));
+                 
+                 // DID THE PLAYER FALL FOR THE EVIL TRAP?
+                 if (botAlignment === 'EVIL' && dir === botSuggestedDir) {
+                    setPhase('HERO_TRAPPED');
+                    setTrapStep('FLASH');
+                    setFloatText({ x: playerPos.x, y: playerPos.y, text: "BONK!" });
+                    setBotMessage(""); // Clear text box instantly
+                 } else {
+                    // Standard wall hit
+                    setFloatText({ x: playerPos.x, y: playerPos.y, text: "BONK!" });
+                    setTimeout(() => setFloatText(null), 1000);
+                    
+                    const nextHp = Math.max(0, hp - 1);
+                    setHp(nextHp);
+                    if (nextHp <= 0) setPhase('GAME_OVER');
+                 }
+              } else {
+                 // Open path! Move to it
+                 setWallState(playerPos.x, playerPos.y, dir, 2);
+                 movePlayer(dir);
+              }
+              return;
+            }
+
+            // TEACHER MODE LOGIC (Player asks to move, human Teacher validates)
+            const wallStatus = getWallCheck(playerPos.x, playerPos.y, dir, hWalls, vWalls);
+            if (wallStatus === 1) return;
+            if (wallStatus === 2) { movePlayer(dir); return; }
+            
+            const th = hWalls.map(r => [...r]), tv = vWalls.map(r => [...r]);
+            if (dir === 'UP') th[playerPos.y - 1][playerPos.x] = 1;
+            else if (dir === 'DOWN') th[playerPos.y][playerPos.x] = 1;
+            else if (dir === 'LEFT') tv[playerPos.y][playerPos.x - 1] = 1;
+            else if (dir === 'RIGHT') tv[playerPos.y][playerPos.x] = 1;
+            
+            const canReachStar = checkReachability(playerPos.x, playerPos.y, starPos.x, starPos.y, th, tv);
+            const canReachHeart = heartPos ? checkReachability(playerPos.x, playerPos.y, heartPos.x, heartPos.y, th, tv, starPos.x, starPos.y) : true;
+
+            if (!canReachStar || !canReachHeart) {
+              setWallState(playerPos.x, playerPos.y, dir, 2); 
+              movePlayer(dir); 
+              return;
+            }
+            
+            setRequestedDir(dir); setPhase('TEACHER_TURN');
+            setYesNoCursor(0);
+            setDialogSpeaker('PLAYER');
+            setBotMessage(`TEACHER, CAN I GO ${dir}?`);
+            setIsWaitingForC(true);
+          };
+
+          const handleTeacherResponse = (ok) => {
+            if (ok) { setWallState(playerPos.x, playerPos.y, requestedDir, 2); movePlayer(requestedDir); }
+            else { setWallState(playerPos.x, playerPos.y, requestedDir, 1); setPhase('STUDENT_TURN'); setBotMessage(""); setIsWaitingForC(false); }
+          };
+
+          const handleMasterResponse = (ok) => {
+            setIsWaitingForC(false);
+            const isOpen = getWallCheck(playerPos.x, playerPos.y, requestedDir, hiddenMaze.hw, hiddenMaze.vw) !== 1;
+            
+            // Calculate what the actual right path is for the exit
+            const targetX = starPos.x;
+            const targetY = starPos.y;
+            const correctDir = getNextStep(playerPos.x, playerPos.y, targetX, targetY, hiddenMaze.hw, hiddenMaze.vw);
+            const isCorrect = requestedDir === correctDir;
+
+            if (ok) { // Master says YES
+               if (isOpen) {
+                  setBotMessage("OK, GOING!");
+                  setTimeout(() => movePlayer(requestedDir), 1000);
+               } else {
+                  setBotMessage("OUCH! A WALL!");
+                  setScore(s => Math.max(0, s - 20));
+                  setFloatText({ x: playerPos.x, y: playerPos.y, text: "BONK!" });
+                  
+                  const nextHp = Math.max(0, hp - 1);
+                  setHp(nextHp);
+                  
+                  setTimeout(() => { 
+                      if (nextHp <= 0) setPhase('GAME_OVER');
+                      else { setPhase('STUDENT_TURN'); setBotMessage(""); }
+                  }, 1500);
+               }
+            } else { // Master says NO
+               if (!isOpen) { // We stopped them from hitting a wall
+                  setBotMessage("GOOD CATCH!");
+                  setTimeout(() => { setPhase('STUDENT_TURN'); setBotMessage(""); }, 1000);
+               } else if (!isCorrect) { // We stopped them from going the wrong way down an open path
+                  setBotMessage("GOOD CALL!");
+                  setTimeout(() => { setPhase('STUDENT_TURN'); setBotMessage(""); }, 1000);
+               } else { // We stopped them from going the right way
+                  setBotMessage("THAT'S THE WAY!");
+                  setScore(s => Math.max(0, s - 20));
+                  setFloatText({ x: playerPos.x, y: playerPos.y, text: "-20" });
+                  setTimeout(() => { setPhase('STUDENT_TURN'); setBotMessage(""); }, 1500);
+               }
+            }
+          };
+
+          const handleStart = () => {
+            if (screen === 'TITLE') setScreen('MENU');
+            else if (screen === 'GAME') {
+              if (phase === 'PAUSED') setPhase(prevPhase || 'STUDENT_TURN');
+              else if (phase !== 'GAME_OVER' && phase !== 'RESET_CONFIRM') { setPrevPhase(phase); setPhase('PAUSED'); setMenuCursor(0); }
+            }
+          };
+
+          const handleSelect = () => { 
+            if (screen === 'GAME') { 
+              if (phase === 'GAME_OVER') setScreen('MENU'); 
+              else if (phase !== 'PAUSED' && phase !== 'RESET_CONFIRM') { setPrevPhase(phase); setPhase('RESET_CONFIRM'); } 
+            } 
+          };
+
+          const handleC = () => {
+            if (screen === 'TITLE') { setScreen('MENU'); }
+            else if (screen === 'MENU') {
+              const act = activeMainMenuItems[menuCursor]?.id;
+              if (act === 'HERO') { setGameMode('HERO'); resetGame('HERO'); setScreen('GAME'); }
+              else if (act === 'MASTER') { setGameMode('MASTER'); resetGame('MASTER'); setScreen('GAME'); }
+              else if (act === 'TEACHER') { setGameMode('TEACHER'); resetGame('TEACHER'); setScreen('GAME'); }
+            }
+            else if (screen === 'GAME') {
+              if (phase === 'PAUSED') {
+                const act = activePauseMenuItems[menuCursor]?.id;
+                if (act === 'RESUME') setPhase(prevPhase || 'STUDENT_TURN');
+                else if (act === 'QUIT') setScreen('TITLE');
+              }
+              else if (phase === 'TEACHER_TURN') {
+                if (isTyping) {
+                   clearInterval(typingIntervalRef.current);
+                   setIsTyping(false);
+                   setDisplayedText(fullTextRef.current);
+                   return;
+                }
+                
+                if (gameMode === 'MASTER' && isWaitingForC) {
+                   handleMasterResponse(yesNoCursor === 0);
+                } else if (gameMode === 'TEACHER') {
+                   handleTeacherResponse(yesNoCursor === 0);
+                }
+              } 
+              else if (phase === 'LEVEL_CLEAR') startNewStage(gameMode, false);
+              else if (phase === 'RESET_CONFIRM') resetGame();
+              else if (phase === 'GAME_OVER') resetGame();
+            }
+          };
+
+          const handleX = () => {
+            if (screen === 'GAME' && phase === 'TEACHER_TURN') {
+              if (isTyping) {
+                 clearInterval(typingIntervalRef.current);
+                 setIsTyping(false);
+                 setDisplayedText(fullTextRef.current);
+                 return;
+              }
+              
+              if (gameMode === 'MASTER' && isWaitingForC) {
+                 handleMasterResponse(false);
+              } else if (gameMode === 'TEACHER') {
+                 handleTeacherResponse(false);
+              }
+            }
+            else if (screen === 'GAME' && phase === 'RESET_CONFIRM') { setPhase(prevPhase || 'STUDENT_TURN'); setPrevPhase(null); }
+            else if (screen === 'MENU') setScreen('TITLE');
+          };
+
+          const handleDir = (d) => {
+            if (screen === 'MENU') {
+              const max = activeMainMenuItems.length - 1;
+              if (d === 'UP') setMenuCursor(p => (p > 0 ? p - 1 : max));
+              if (d === 'DOWN') setMenuCursor(p => (p < max ? p + 1 : 0));
+            } else if (screen === 'GAME' && phase === 'PAUSED') {
+              const max = activePauseMenuItems.length - 1;
+              if (d === 'UP') setMenuCursor(p => (p > 0 ? p - 1 : max));
+              if (d === 'DOWN') setMenuCursor(p => (p < max ? p + 1 : 0));
+            } else if (screen === 'GAME' && phase === 'TEACHER_TURN') {
+              if (!isTyping && (gameMode === 'MASTER' || gameMode === 'TEACHER')) {
+                 if (d === 'UP' || d === 'LEFT') setYesNoCursor(0);
+                 if (d === 'DOWN' || d === 'RIGHT') setYesNoCursor(1);
+              }
+            } else if (screen === 'GAME' && phase === 'STUDENT_TURN') {
+              askDirection(d);
+            }
+          };
+
+          useEffect(() => {
+            const hk = (e) => {
+              const k = e.key.toLowerCase();
+              if (k === 'enter') handleStart();
+              else if (k === 'shift') handleSelect();
+              else if (k === 'c') handleC();
+              else if (k === 'x') handleX();
+              else {
+                let d = null;
+                if (e.key === 'ArrowUp' || k === 'w') d = 'UP';
+                else if (e.key === 'ArrowDown' || k === 's') d = 'DOWN';
+                else if (e.key === 'ArrowLeft' || k === 'a') d = 'LEFT';
+                else if (e.key === 'ArrowRight' || k === 'd') d = 'RIGHT';
+                if (d) { e.preventDefault(); handleDir(d); }
+              }
+            };
+            window.addEventListener('keydown', hk);
+            return () => window.removeEventListener('keydown', hk);
+          }, [screen, phase, playerPos, hWalls, vWalls, requestedDir, facing, menuCursor, isWaitingForC, botMessage, dialogSpeaker, starPos, heartPos, gameMode, isMobile, isTyping, level, hp, hiddenMaze, yesNoCursor, botSuggestedDir, botAlignment]);
+
+          const drawSprite = (ctx, sx, sy, spr, ps = 1) => {
+            for (let r = 0; r < spr.length; r++) {
+              for (let c = 0; c < spr[r].length; c++) {
+                if (spr[r][c] === 1) { ctx.fillStyle = '#306230'; ctx.fillRect(sx + c * ps, sy + r * ps, ps, ps); }
+                else if (spr[r][c] === 2) { ctx.fillStyle = '#0f380f'; ctx.fillRect(sx + c * ps, sy + r * ps, ps, ps); }
+              }
+            }
+          };
+
+          // ---------------------------------------------------------------------------
+          // SMART DYNAMIC DIALOG POSITIONING LOGIC
+          // ---------------------------------------------------------------------------
+          let putDialogAtTop = false;
+          if (playerPos.y >= 3) {
+              putDialogAtTop = true; // Player in bottom rows, keep bottom clear
+          } else if (playerPos.y <= 1) {
+              putDialogAtTop = false; // Player in top rows, keep top clear
+          } else {
+              // Player is at exactly y === 2 (middle row).
+              // Only bump to top if actively moving/looking DOWN to keep the bottom view clear.
+              if (phase === 'TEACHER_TURN' && requestedDir === 'DOWN') {
+                  putDialogAtTop = true;
+              } else if (gameMode === 'HERO' && phase === 'STUDENT_TURN' && botSuggestedDir === 'DOWN') {
+                  putDialogAtTop = true;
+              } else {
+                  putDialogAtTop = false; 
+              }
+          }
+
+
+          // TRUE 140x140 NATIVE RENDERING
+          useEffect(() => {
+            const c = canvasRef.current; if (!c) return; const ctx = c.getContext('2d');
+            const cs = 22, off = 15; 
+            
+            ctx.fillStyle = '#9bbc0f'; ctx.fillRect(0, 0, c.width, c.height);
+
+            if (screen === 'GAME') {
+              
+              // Draw Grid Elements (Fog of war logic for Hero mode)
+              for (let r = 0; r < GRID_SIZE; r++) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                   if (gameMode === 'HERO' && !visited[r][col]) {
+                      // Dark Unexplored Room (Removed the inner dots for pitch black)
+                      ctx.fillStyle = '#0f380f';
+                      ctx.fillRect(col * cs + off, r * cs + off, cs, cs);
+                   } else {
+                      // Lit Visited Room
+                      ctx.fillStyle = '#8bac0f';
+                      ctx.fillRect(col * cs + off, r * cs + off, cs, cs);
+                   }
+                }
+              }
+              
+              ctx.strokeStyle = '#0f380f'; ctx.lineWidth = 2;
+              ctx.strokeRect(off, off, GRID_SIZE * cs, GRID_SIZE * cs);
+              
+              for (let r = 0; r < GRID_SIZE - 1; r++) {
+                 for (let col = 0; col < GRID_SIZE; col++) {
+                    const isVisible = hWalls[r][col] === 1 || (gameMode === 'HERO' && hiddenMaze.hw[r][col] === 1 && (visited[r][col] || visited[r+1][col]));
+                    if (isVisible) { ctx.beginPath(); ctx.moveTo(col * cs + off, (r + 1) * cs + off); ctx.lineTo((col + 1) * cs + off, (r + 1) * cs + off); ctx.stroke(); }
+                 }
+              }
+              for (let r = 0; r < GRID_SIZE; r++) {
+                 for (let col = 0; col < GRID_SIZE - 1; col++) {
+                    const isVisible = vWalls[r][col] === 1 || (gameMode === 'HERO' && hiddenMaze.vw[r][col] === 1 && (visited[r][col] || visited[r][col+1]));
+                    if (isVisible) { ctx.beginPath(); ctx.moveTo((col + 1) * cs + off, r * cs + off); ctx.lineTo((col + 1) * cs + off, (r + 1) * cs + off); ctx.stroke(); }
+                 }
+              }
+              
+              ctx.fillStyle = '#0f380f';
+              for (let r = 0; r <= GRID_SIZE; r++) for (let col = 0; col <= GRID_SIZE; col++) ctx.fillRect(col * cs + off - 1, r * cs + off - 1, 2, 2);
+              
+              drawSprite(ctx, starPos.x * cs + off + 1, starPos.y * cs + off + 1, STAR_SPRITE, 2);
+              if (heartPos) drawSprite(ctx, heartPos.x * cs + off + 1, heartPos.y * cs + off + 1, HEART_SPRITE, 2);
+              
+              // Handle TRAP Flashing logic for Player
+              const isFlashing = phase === 'HERO_TRAPPED' && trapStep === 'FLASH';
+              const hidePlayer = isFlashing && flashToggle;
+
+              if (!hidePlayer) {
+                 let a = ARROW_RIGHT; if (facing === 'UP') a = ARROW_UP; if (facing === 'DOWN') a = ARROW_DOWN; if (facing === 'LEFT') a = ARROW_LEFT;
+                 drawSprite(ctx, playerPos.x * cs + off + 1, playerPos.y * cs + off + 1, a, 2);
+              }
+              
+              const showDialog = botMessage !== "" || phase === 'TEACHER_TURN' || phase === 'HERO_TRAPPED';
+
+              if (showDialog) {
+                 const overlayX = 5;
+                 const overlayY = putDialogAtTop ? 4 : 92; // Hugs the top/bottom boundary
+                 
+                 ctx.fillStyle = '#0f380f'; ctx.fillRect(overlayX, overlayY, 130, 45); 
+                 ctx.fillStyle = '#9bbc0f'; ctx.fillRect(overlayX + 2, overlayY + 2, 126, 41);
+                 
+                 const portraitX = overlayX + 4, portraitY = overlayY + 4, portraitSize = 36;
+                 ctx.fillStyle = '#0f380f'; ctx.fillRect(portraitX, portraitY, portraitSize, portraitSize);
+                 ctx.fillStyle = '#9bbc0f'; ctx.fillRect(portraitX + 2, portraitY + 2, portraitSize - 4, portraitSize - 4); 
+                 
+                 let activeSprite;
+                 if (dialogSpeaker === 'ROBOT') {
+                     if (botAlignment === 'EVIL') activeSprite = (isTyping && mouthOpen) ? ROBOT_EVIL_2 : ROBOT_EVIL_1;
+                     else activeSprite = (isTyping && mouthOpen) ? ROBOT_GOOD_2 : ROBOT_GOOD_1;
+                 } else {
+                     activeSprite = (isTyping && mouthOpen) ? PLAYER_2 : PLAYER_1;
+                 }
+                 
+                 drawSprite(ctx, portraitX + 3, portraitY + 3, activeSprite, 3);
+              }
+            }
+          }, [screen, phase, hWalls, vWalls, playerPos, facing, starPos, heartPos, mouthOpen, isTyping, dialogSpeaker, gameMode, visited, floatText, isMobile, hp, level, score, botMessage, putDialogAtTop, botAlignment, trapStep, flashToggle]);
+
+          const activeMainMenuItems = [
+            { id: 'HERO', icon: '🛡️', label: 'HERO' },
+            { id: 'MASTER', icon: '👁️', label: 'MASTER' },
+            { id: 'TEACHER', icon: '👥', label: 'TEACHER' }
+          ];
+
+          const activePauseMenuItems = [
+            { id: 'RESUME', label: 'RESUME' },
+            { id: 'QUIT', label: 'QUIT' }
+          ];
+
+          const handleSelectPress = () => handleSelect();
+          const handleStartPress = () => handleStart();
+
+          const DPadMobile = ({ onDir }) => (
+            <div className="relative w-24 h-24">
+              <div className="absolute left-[30px] top-0 w-[34px] h-full bg-[#111] rounded-lg shadow-md" />
+              <div className="absolute top-[30px] left-0 h-[34px] w-full bg-[#111] rounded-lg shadow-md" />
+              <button className="absolute top-0 left-[30px] w-[34px] h-[30px] z-10 outline-none" onClick={() => onDir('UP')} />
+              <button className="absolute bottom-0 left-[30px] w-[34px] h-[30px] z-10 outline-none" onClick={() => onDir('DOWN')} />
+              <button className="absolute top-[30px] left-0 w-[30px] h-[34px] z-10 outline-none" onClick={() => onDir('LEFT')} />
+              <button className="absolute top-[30px] right-0 w-[30px] h-[34px] z-10 outline-none" onClick={() => onDir('RIGHT')} />
+            </div>
+          );
+
+          const ActionButtonsMobile = ({ onC, onX }) => (
+            <div className="flex gap-4 transform -rotate-[15deg] scale-90">
+              <button className="w-12 h-12 bg-[#902446] rounded-full shadow-md active:translate-y-1 outline-none" onClick={onX}><span className="text-[#646a73] font-bold mt-12 block text-xs font-sans">X</span></button>
+              <button className="w-12 h-12 bg-[#902446] rounded-full shadow-md active:translate-y-1 -translate-y-2 outline-none" onClick={onC}><span className="text-[#646a73] font-bold mt-12 block text-xs font-sans">C</span></button>
+            </div>
+          );
+
+          const SysBtn = ({ label, onClick }) => (
+            <div className="flex flex-col items-center gap-1 transform -rotate-[25deg]" style={{ WebkitBackfaceVisibility: 'hidden' }}>
+               <div className="w-[56px] h-[20px] bg-[#cfd1d3] rounded-full shadow-[inset_1px_2px_3px_rgba(0,0,0,0.3),inset_-1px_-1px_2px_rgba(255,255,255,0.8)] flex items-center justify-center cursor-pointer active:scale-95" onClick={onClick}>
+                  <button className="w-[44px] h-[10px] bg-[#93979b] rounded-full shadow-[inset_1px_1px_2px_rgba(255,255,255,0.3),0_2px_3px_rgba(0,0,0,0.5)] outline-none pointer-events-none"></button>
+               </div>
+               <span className="font-bold text-[8px] tracking-widest uppercase font-sans whitespace-nowrap text-[#646a73]">{label}</span>
+            </div>
+          );
+
+          const showDialogOverlay = botMessage !== "" || phase === 'TEACHER_TURN' || phase === 'HERO_TRAPPED';
+          const hudPositionClass = (showDialogOverlay && putDialogAtTop) ? 'bottom-[6px]' : 'top-[6px]';
+
+          return (
+            <div className={`fixed inset-0 ${isMobile ? 'bg-black' : 'bg-[#dcdde0] p-4'} flex flex-col items-center justify-center transition-colors duration-300 overflow-hidden`}>
+              {/* Outer Scale Wrapper */}
+              <div className="flex flex-col items-center transition-all duration-300" style={{ transform: `scale(${scale})`, transformOrigin: 'center center' }}>
+                
+                {isMobile ? (
+                  // --- MOBILE: CLASSIC HANDHELD SHELL ---
+                  <div ref={consoleRef} className="bg-[#dcdde0] rounded-[2rem] rounded-br-[4rem] shadow-2xl border-b-[12px] border-r-[8px] border-[#a0a3a7] p-6 pb-12 w-[360px] flex flex-col items-center select-none relative">
+                    <div className="bg-[#5a5f68] p-4 w-[312px] rounded-t-xl rounded-b-3xl relative shadow-[inset_0px_0px_10px_rgba(0,0,0,0.9)] border-b-[6px] border-[#41454c]">
+                        <div className="absolute top-2 left-6 right-6 flex justify-between items-center text-[#9ca3af] text-[8px] font-bold tracking-widest uppercase font-sans">
+                           <div className="flex items-center gap-1"><div className="w-2 h-2 bg-red-500 rounded-full shadow-[0_0_2px_red]" /> BATTERY</div>
+                           <div>DOT MATRIX WITH STEREO SOUND</div>
+                        </div>
+                        
+                        <div className="bg-[#9bbc0f] w-[280px] h-[280px] mt-4 relative overflow-hidden font-pixel">
+                           <div className="absolute inset-0 z-[100] pointer-events-none shadow-[inset_0_0_20px_rgba(15,56,15,0.4)]"></div>
+                           <div className="absolute inset-0 z-[100] pointer-events-none" style={{ backgroundImage: 'linear-gradient(to right, transparent 50%, rgba(15,56,15,0.15) 50%), linear-gradient(to bottom, transparent 50%, rgba(15,56,15,0.15) 50%)', backgroundSize: '2px 2px' }}></div>
+                           <canvas ref={canvasRef} width={140} height={140} className="block absolute inset-0 z-0 w-[280px] h-[280px]" style={{ imageRendering: 'pixelated' }} />
+                           
+                           {screen === 'GAME' && (
+                              <>
+                                <div className={`absolute ${hudPositionClass} left-[10px] text-[#0f380f] text-[10px] z-10 uppercase tracking-tighter font-bold`}>
+                                   LVL:{level.toString().padStart(2, '0')} HP:{hp}
+                                </div>
+                                <div className={`absolute ${hudPositionClass} right-[10px] text-[#0f380f] text-[10px] z-10 uppercase tracking-tighter font-bold`}>
+                                   PTS:{score.toString().padStart(4, '0')}
+                                </div>
+                              </>
+                           )}
+                           
+                           {screen === 'GAME' && floatText && (
+                              <div 
+                                className={`absolute z-20 font-bold text-[12px] uppercase tracking-tighter pointer-events-none text-center whitespace-nowrap ${
+                                   gameMode === 'HERO' && floatText.y > 0 && !visited[floatText.y - 1][floatText.x]
+                                   ? 'animate-float-up-invert'
+                                   : 'animate-float-up text-[#0f380f]'
+                                }`}
+                                style={{ left: floatText.x * 44 + 10 + 'px', top: floatText.y * 44 + 26 + 'px', width: '84px' }}
+                              >
+                                {floatText.text}
+                              </div>
+                           )}
+
+                           {screen === 'TITLE' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center font-pixel text-[#0f380f] z-20"><div className="flex flex-col items-center mb-10"><span className="text-[12px] tracking-widest mb-2">POCKET</span><h1 className="text-[24px] text-center leading-[1.5]">MYSTERY<br/>MAZE</h1></div><p className="text-[14px] animate-slow-blink uppercase">PRESS START</p></div>}
+                           
+                           {screen === 'MENU' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center font-pixel text-[#0f380f] z-20 pl-6"><ul className="text-[14px] space-y-8 text-left w-full">{activeMainMenuItems.map((it, i) => <li key={it.id} className="flex items-center"><span className="w-6 mr-1">{menuCursor === i ? '▶' : ''}</span>{it.icon && <span className="font-sans text-lg mr-2" style={{ filter: 'contrast(0) sepia(1) hue-rotate(70deg) saturate(3) brightness(0.4)' }}>{it.icon}</span>}<span>{it.label}</span></li>)}</ul></div>}
+                           
+                           {screen === 'GAME' && phase === 'PAUSED' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center p-4 text-center border-[8px] border-double border-[#0f380f] m-4 shadow-md font-pixel text-[#0f380f] z-50"><h2 className="mb-10 text-[18px]">PAUSED</h2><ul className="text-[14px] space-y-8 text-left w-full pl-10">{activePauseMenuItems.map((it, i) => <li key={it.id} className="flex items-center"><span className="w-6 mr-2">{menuCursor === i ? '▶' : ''}</span>{it.label}</li>)}</ul></div>}
+                           
+                           {screen === 'GAME' && phase === 'LEVEL_CLEAR' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center p-6 text-center border-[8px] border-double border-[#0f380f] m-4 shadow-md z-50"><span className="text-[#0f380f] text-[20px] leading-relaxed uppercase">GOAL!</span><span className="text-[#0f380f] text-[12px] mt-6 font-bold">STAGE {level} CLEAR</span><span className="text-[#306230] text-[12px] mt-10 animate-pulse uppercase">PRESS Z</span></div>}
+
+                           {screen === 'GAME' && phase === 'GAME_OVER' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center p-6 text-center border-[8px] border-double border-[#0f380f] m-4 shadow-md z-50"><span className="text-[#0f380f] text-[20px] leading-relaxed uppercase">GAME OVER!</span><span className="text-[#0f380f] text-[12px] mt-6 font-bold">FINAL SCORE: {score}</span><span className="text-[#306230] text-[10px] mt-10 animate-pulse uppercase">PRESS Z FOR MENU</span></div>}
+                           
+                           {screen === 'GAME' && showDialogOverlay && (
+                              <div className="absolute left-[10px] w-[260px] h-[90px] z-10 pointer-events-none" style={{ top: putDialogAtTop ? '8px' : '184px' }}>
+                                 <div className="absolute left-[88px] top-[14px] right-[10px] bottom-[10px] flex flex-col items-start justify-start">
+                                   <p className="text-[#0f380f] text-[12px] leading-snug uppercase font-bold text-left m-0 p-0 whitespace-pre-line tracking-tight">
+                                     {displayedText}
+                                   </p>
+                                   {!isTyping && (gameMode === 'TEACHER' || (gameMode === 'MASTER' && isWaitingForC)) && (
+                                     <div className="absolute bottom-0 right-0 bg-[#9bbc0f] border-[3px] border-[#0f380f] px-2 py-1 flex flex-col gap-1 z-20 pointer-events-auto">
+                                       <div className="flex items-center text-[#0f380f] text-[10px] font-bold leading-none"><span className="w-3">{yesNoCursor === 0 ? '▶' : ''}</span>YES</div>
+                                       <div className="flex items-center text-[#0f380f] text-[10px] font-bold leading-none"><span className="w-3">{yesNoCursor === 1 ? '▶' : ''}</span>NO</div>
+                                     </div>
+                                   )}
+                                 </div>
+                              </div>
+                           )}
+                           {screen === 'GAME' && phase === 'RESET_CONFIRM' && <div className="absolute inset-0 flex items-center justify-center z-50"><div className="bg-[#9bbc0f] border-[6px] border-double border-[#0f380f] p-6 shadow-xl text-center"><p className="text-[#0f380f] text-[16px] leading-relaxed uppercase mb-6">RESET?</p><div className="flex justify-between px-2 text-[#306230] text-[14px]"><span>C:YES</span><span>X:NO</span></div></div></div>}
+                        </div>
+                    </div>
+
+                    <div className="flex flex-row w-full justify-between items-center px-4 mt-8">
+                       <DPadMobile onDir={handleDir} />
+                       <ActionButtonsMobile onC={handleC} onX={handleX} />
+                    </div>
+                    
+                    <div className="flex justify-center gap-14 mt-12 w-full relative z-10">
+                       <SysBtn label="SELECT" onClick={handleSelectPress} />
+                       <SysBtn label="START" onClick={handleStartPress} />
+                    </div>
+                    
+                    <div className="absolute bottom-4 right-2 flex gap-1 transform -rotate-[25deg] pointer-events-none" style={{ WebkitBackfaceVisibility: 'hidden' }}>
+                      {[1,2,3,4,5,6].map(i => <div key={i} className="w-1.5 h-10 bg-[#b5b8ba] rounded-full shadow-[inset_1px_2px_2px_rgba(0,0,0,0.3)]"></div>)}
+                    </div>
+                  </div>
+                ) : (
+                  // --- DESKTOP: SUPER GAME BOY EMULATOR BORDER ---
+                  <div ref={consoleRef} className="flex flex-col items-center select-none transition-all duration-300">
+                     
+                     {/* Central Emulator Border - Unobstructed to allow max integer scaling */}
+                     <div className="bg-[#5a5f68] p-6 w-[328px] rounded-t-xl rounded-b-3xl relative shadow-[inset_0px_0px_10px_rgba(0,0,0,0.9)] border-b-[6px] border-[#41454c]">
+                         <div className="absolute top-2 left-6 right-6 flex justify-between items-center text-[#9ca3af] text-[8px] font-bold tracking-widest uppercase font-sans">
+                            <div className="flex items-center gap-1"><div className="w-2 h-2 bg-red-500 rounded-full shadow-[0_0_2px_red]" /> BATTERY</div>
+                            <div>DOT MATRIX WITH STEREO SOUND</div>
+                         </div>
+                         
+                         <div className="bg-[#9bbc0f] w-[280px] h-[280px] mt-4 relative overflow-hidden font-pixel">
+                            <div className="absolute inset-0 z-[100] pointer-events-none shadow-[inset_0_0_20px_rgba(15,56,15,0.4)]"></div>
+                            <div className="absolute inset-0 z-[100] pointer-events-none" style={{ backgroundImage: 'linear-gradient(to right, transparent 50%, rgba(15,56,15,0.15) 50%), linear-gradient(to bottom, transparent 50%, rgba(15,56,15,0.15) 50%)', backgroundSize: '2px 2px' }}></div>
+                            <canvas ref={canvasRef} width={140} height={140} className="block absolute inset-0 z-0 w-[280px] h-[280px]" style={{ imageRendering: 'pixelated' }} />
+                            
+                            {screen === 'GAME' && (
+                               <>
+                                 <div className={`absolute ${hudPositionClass} left-[10px] text-[#0f380f] text-[10px] z-10 uppercase tracking-tighter font-bold`}>
+                                    LVL:{level.toString().padStart(2, '0')} HP:{hp}
+                                 </div>
+                                 <div className={`absolute ${hudPositionClass} right-[10px] text-[#0f380f] text-[10px] z-10 uppercase tracking-tighter font-bold`}>
+                                    PTS:{score.toString().padStart(4, '0')}
+                                 </div>
+                               </>
+                            )}
+                            
+                            {screen === 'GAME' && floatText && (
+                               <div 
+                                 className={`absolute z-20 font-bold text-[12px] uppercase tracking-tighter pointer-events-none text-center whitespace-nowrap ${
+                                    gameMode === 'HERO' && floatText.y > 0 && !visited[floatText.y - 1][floatText.x]
+                                    ? 'animate-float-up-invert'
+                                    : 'animate-float-up text-[#0f380f]'
+                                 }`}
+                                 style={{ left: floatText.x * 44 + 10 + 'px', top: floatText.y * 44 + 26 + 'px', width: '84px' }}
+                               >
+                                 {floatText.text}
+                               </div>
+                            )}
+
+                            {screen === 'TITLE' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center font-pixel text-[#0f380f] z-20"><div className="flex flex-col items-center mb-10"><span className="text-[12px] tracking-widest mb-2">POCKET</span><h1 className="text-[24px] text-center leading-[1.5]">MYSTERY<br/>MAZE</h1></div><p className="text-[14px] animate-slow-blink uppercase">PRESS START</p></div>}
+                            
+                            {screen === 'MENU' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center font-pixel text-[#0f380f] z-20 pl-6"><ul className="text-[14px] space-y-8 text-left w-full">{activeMainMenuItems.map((it, i) => <li key={it.id} className="flex items-center"><span className="w-6 mr-1">{menuCursor === i ? '▶' : ''}</span>{it.icon && <span className="font-sans text-lg mr-2" style={{ filter: 'contrast(0) sepia(1) hue-rotate(70deg) saturate(3) brightness(0.4)' }}>{it.icon}</span>}<span>{it.label}</span></li>)}</ul></div>}
+                            
+                            {screen === 'GAME' && phase === 'PAUSED' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center p-4 text-center border-[8px] border-double border-[#0f380f] m-4 shadow-md font-pixel text-[#0f380f] z-50"><h2 className="mb-10 text-[18px]">PAUSED</h2><ul className="text-[14px] space-y-8 text-left w-full pl-10">{activePauseMenuItems.map((it, i) => <li key={it.id} className="flex items-center"><span className="w-6 mr-2">{menuCursor === i ? '▶' : ''}</span>{it.label}</li>)}</ul></div>}
+                            
+                            {screen === 'GAME' && phase === 'LEVEL_CLEAR' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center p-6 text-center border-[8px] border-double border-[#0f380f] m-4 shadow-md z-50"><span className="text-[#0f380f] text-[20px] leading-relaxed uppercase">GOAL!</span><span className="text-[#0f380f] text-[12px] mt-6 font-bold">STAGE {level} CLEAR</span><span className="text-[#306230] text-[12px] mt-10 animate-pulse uppercase">PRESS C</span></div>}
+
+                            {screen === 'GAME' && phase === 'GAME_OVER' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center p-6 text-center border-[8px] border-double border-[#0f380f] m-4 shadow-md z-50"><span className="text-[#0f380f] text-[20px] leading-relaxed uppercase">GAME OVER!</span><span className="text-[#0f380f] text-[12px] mt-6 font-bold">FINAL SCORE: {score}</span><span className="text-[#306230] text-[10px] mt-10 animate-pulse uppercase">PRESS Z FOR MENU</span></div>}
+                            
+                            {screen === 'GAME' && showDialogOverlay && (
+                               <div className="absolute left-[10px] w-[260px] h-[90px] z-10 pointer-events-none" style={{ top: putDialogAtTop ? '8px' : '184px' }}>
+                                  <div className="absolute left-[88px] top-[14px] right-[10px] bottom-[10px] flex flex-col items-start justify-start">
+                                    <p className="text-[#0f380f] text-[12px] leading-snug uppercase font-bold text-left m-0 p-0 whitespace-pre-line tracking-tight">
+                                      {displayedText}
+                                    </p>
+                                    {!isTyping && (gameMode === 'TEACHER' || (gameMode === 'MASTER' && isWaitingForC)) && (
+                                      <div className="absolute bottom-0 right-0 bg-[#9bbc0f] border-[3px] border-[#0f380f] px-2 py-1 flex flex-col gap-1 z-20 pointer-events-auto">
+                                        <div className="flex items-center text-[#0f380f] text-[10px] font-bold leading-none"><span className="w-3">{yesNoCursor === 0 ? '▶' : ''}</span>YES</div>
+                                        <div className="flex items-center text-[#0f380f] text-[10px] font-bold leading-none"><span className="w-3">{yesNoCursor === 1 ? '▶' : ''}</span>NO</div>
+                                      </div>
+                                    )}
+                                  </div>
+                               </div>
+                            )}
+                            {screen === 'GAME' && phase === 'RESET_CONFIRM' && <div className="absolute inset-0 flex items-center justify-center z-50"><div className="bg-[#9bbc0f] border-[6px] border-double border-[#0f380f] p-6 shadow-xl text-center"><p className="text-[#0f380f] text-[16px] leading-relaxed uppercase mb-6">RESET?</p><div className="flex justify-between px-2 text-[#306230] text-[14px]"><span>C:YES</span><span>X:NO</span></div></div></div>}
+                         </div>
+                     </div>
+                     
+                     {/* Instruction Pill (Exactly the width of the screen bezel) */}
+                     <div className="mt-6 w-[328px] bg-[#333] rounded-full flex items-center justify-center py-2.5 shadow-lg border-b-[3px] border-[#111]">
+                        <div className="flex justify-between w-full px-[14px] text-[#e0e0e0] font-sans font-bold text-[5.5px] tracking-widest uppercase whitespace-nowrap">
+                            <span>ARROWS: MOVE/SEL</span>
+                            <span>C: YES</span>
+                            <span>X: NO</span>
+                            <span>ENTER: PAUSE</span>
+                            <span>SHIFT: RESET</span>
+                        </div>
+                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
