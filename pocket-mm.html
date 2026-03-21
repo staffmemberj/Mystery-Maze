@@ -330,7 +330,7 @@
           const typingIntervalRef = useRef(null);
           const fullTextRef = useRef("");
           
-          const [isWaitingForC, setIsWaitingForC] = useState(false);
+          const [isWaitingForZ, setIsWaitingForZ] = useState(false);
           const [mouthOpen, setMouthOpen] = useState(false);
           const [yesNoCursor, setYesNoCursor] = useState(0);
 
@@ -515,7 +515,7 @@
                     setYesNoCursor(0);
                     setDialogSpeaker('ROBOT');
                     setBotMessage(`SHOULD I GO ${askDir}?`);
-                    setIsWaitingForC(true);
+                    setIsWaitingForZ(true);
                     setPhase('TEACHER_TURN');
                  }, 800);
                  return () => clearTimeout(timer);
@@ -598,7 +598,7 @@
             setTrapStep('NONE');
             
             setPhase('STUDENT_TURN'); setRequestedDir(null); 
-            setBotMessage(""); setIsWaitingForC(false); setDialogSpeaker('ROBOT');
+            setBotMessage(""); setIsWaitingForZ(false); setDialogSpeaker('ROBOT');
             setFloatText(null);
             setHiddenMaze(hm);
           };
@@ -639,7 +639,7 @@
             setVisited(prev => { const n = prev.map(r => [...r]); n[y][x] = true; return n; });
             
             if (x === starPos.x && y === starPos.y) setPhase('LEVEL_CLEAR');
-            else { setPhase('STUDENT_TURN'); setBotMessage(""); setIsWaitingForC(false); }
+            else { setPhase('STUDENT_TURN'); setBotMessage(""); setIsWaitingForZ(false); }
           };
 
           const askDirection = (dir) => {
@@ -704,16 +704,16 @@
             setYesNoCursor(0);
             setDialogSpeaker('PLAYER');
             setBotMessage(`TEACHER, CAN I GO ${dir}?`);
-            setIsWaitingForC(true);
+            setIsWaitingForZ(true);
           };
 
           const handleTeacherResponse = (ok) => {
             if (ok) { setWallState(playerPos.x, playerPos.y, requestedDir, 2); movePlayer(requestedDir); }
-            else { setWallState(playerPos.x, playerPos.y, requestedDir, 1); setPhase('STUDENT_TURN'); setBotMessage(""); setIsWaitingForC(false); }
+            else { setWallState(playerPos.x, playerPos.y, requestedDir, 1); setPhase('STUDENT_TURN'); setBotMessage(""); setIsWaitingForZ(false); }
           };
 
           const handleMasterResponse = (ok) => {
-            setIsWaitingForC(false);
+            setIsWaitingForZ(false);
             const isOpen = getWallCheck(playerPos.x, playerPos.y, requestedDir, hiddenMaze.hw, hiddenMaze.vw) !== 1;
             
             // Calculate what the actual right path is for the exit
@@ -770,7 +770,7 @@
             } 
           };
 
-          const handleC = () => {
+          const handleZ = () => {
             if (screen === 'TITLE') { setScreen('MENU'); }
             else if (screen === 'MENU') {
               const act = activeMainMenuItems[menuCursor]?.id;
@@ -792,7 +792,7 @@
                    return;
                 }
                 
-                if (gameMode === 'MASTER' && isWaitingForC) {
+                if (gameMode === 'MASTER' && isWaitingForZ) {
                    handleMasterResponse(yesNoCursor === 0);
                 } else if (gameMode === 'TEACHER') {
                    handleTeacherResponse(yesNoCursor === 0);
@@ -800,7 +800,7 @@
               } 
               else if (phase === 'LEVEL_CLEAR') startNewStage(gameMode, false);
               else if (phase === 'RESET_CONFIRM') resetGame();
-              else if (phase === 'GAME_OVER') resetGame();
+              else if (phase === 'GAME_OVER') setScreen('MENU');
             }
           };
 
@@ -813,7 +813,7 @@
                  return;
               }
               
-              if (gameMode === 'MASTER' && isWaitingForC) {
+              if (gameMode === 'MASTER' && isWaitingForZ) {
                  handleMasterResponse(false);
               } else if (gameMode === 'TEACHER') {
                  handleTeacherResponse(false);
@@ -847,7 +847,7 @@
               const k = e.key.toLowerCase();
               if (k === 'enter') handleStart();
               else if (k === 'shift') handleSelect();
-              else if (k === 'c') handleC();
+              else if (k === 'z') handleZ();
               else if (k === 'x') handleX();
               else {
                 let d = null;
@@ -860,7 +860,7 @@
             };
             window.addEventListener('keydown', hk);
             return () => window.removeEventListener('keydown', hk);
-          }, [screen, phase, playerPos, hWalls, vWalls, requestedDir, facing, menuCursor, isWaitingForC, botMessage, dialogSpeaker, starPos, heartPos, gameMode, isMobile, isTyping, level, hp, hiddenMaze, yesNoCursor, botSuggestedDir, botAlignment]);
+          }, [screen, phase, playerPos, hWalls, vWalls, requestedDir, facing, menuCursor, isWaitingForZ, botMessage, dialogSpeaker, starPos, heartPos, gameMode, isMobile, isTyping, level, hp, hiddenMaze, yesNoCursor, botSuggestedDir, botAlignment]);
 
           const drawSprite = (ctx, sx, sy, spr, ps = 1) => {
             for (let r = 0; r < spr.length; r++) {
@@ -998,10 +998,10 @@
             </div>
           );
 
-          const ActionButtonsMobile = ({ onC, onX }) => (
+          const ActionButtonsMobile = ({ onZ, onX }) => (
             <div className="flex gap-4 transform -rotate-[15deg] scale-90">
               <button className="w-12 h-12 bg-[#902446] rounded-full shadow-md active:translate-y-1 outline-none" onClick={onX}><span className="text-[#646a73] font-bold mt-12 block text-xs font-sans">X</span></button>
-              <button className="w-12 h-12 bg-[#902446] rounded-full shadow-md active:translate-y-1 -translate-y-2 outline-none" onClick={onC}><span className="text-[#646a73] font-bold mt-12 block text-xs font-sans">C</span></button>
+              <button className="w-12 h-12 bg-[#902446] rounded-full shadow-md active:translate-y-1 -translate-y-2 outline-none" onClick={onZ}><span className="text-[#646a73] font-bold mt-12 block text-xs font-sans">Z</span></button>
             </div>
           );
 
@@ -1076,7 +1076,7 @@
                                    <p className="text-[#0f380f] text-[12px] leading-snug uppercase font-bold text-left m-0 p-0 whitespace-pre-line tracking-tight">
                                      {displayedText}
                                    </p>
-                                   {!isTyping && (gameMode === 'TEACHER' || (gameMode === 'MASTER' && isWaitingForC)) && (
+                                   {!isTyping && (gameMode === 'TEACHER' || (gameMode === 'MASTER' && isWaitingForZ)) && (
                                      <div className="absolute bottom-0 right-0 bg-[#9bbc0f] border-[3px] border-[#0f380f] px-2 py-1 flex flex-col gap-1 z-20 pointer-events-auto">
                                        <div className="flex items-center text-[#0f380f] text-[10px] font-bold leading-none"><span className="w-3">{yesNoCursor === 0 ? '▶' : ''}</span>YES</div>
                                        <div className="flex items-center text-[#0f380f] text-[10px] font-bold leading-none"><span className="w-3">{yesNoCursor === 1 ? '▶' : ''}</span>NO</div>
@@ -1085,13 +1085,13 @@
                                  </div>
                               </div>
                            )}
-                           {screen === 'GAME' && phase === 'RESET_CONFIRM' && <div className="absolute inset-0 flex items-center justify-center z-50"><div className="bg-[#9bbc0f] border-[6px] border-double border-[#0f380f] p-6 shadow-xl text-center"><p className="text-[#0f380f] text-[16px] leading-relaxed uppercase mb-6">RESET?</p><div className="flex justify-between px-2 text-[#306230] text-[14px]"><span>C:YES</span><span>X:NO</span></div></div></div>}
+                           {screen === 'GAME' && phase === 'RESET_CONFIRM' && <div className="absolute inset-0 flex items-center justify-center z-50"><div className="bg-[#9bbc0f] border-[6px] border-double border-[#0f380f] p-6 shadow-xl text-center"><p className="text-[#0f380f] text-[16px] leading-relaxed uppercase mb-6">RESET?</p><div className="flex justify-between px-2 text-[#306230] text-[14px]"><span>Z:YES</span><span>X:NO</span></div></div></div>}
                         </div>
                     </div>
 
                     <div className="flex flex-row w-full justify-between items-center px-4 mt-8">
                        <DPadMobile onDir={handleDir} />
-                       <ActionButtonsMobile onC={handleC} onX={handleX} />
+                       <ActionButtonsMobile onZ={handleZ} onX={handleX} />
                     </div>
                     
                     <div className="flex justify-center gap-14 mt-12 w-full relative z-10">
@@ -1149,7 +1149,7 @@
                             
                             {screen === 'GAME' && phase === 'PAUSED' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center p-4 text-center border-[8px] border-double border-[#0f380f] m-4 shadow-md font-pixel text-[#0f380f] z-50"><h2 className="mb-10 text-[18px]">PAUSED</h2><ul className="text-[14px] space-y-8 text-left w-full pl-10">{activePauseMenuItems.map((it, i) => <li key={it.id} className="flex items-center"><span className="w-6 mr-2">{menuCursor === i ? '▶' : ''}</span>{it.label}</li>)}</ul></div>}
                             
-                            {screen === 'GAME' && phase === 'LEVEL_CLEAR' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center p-6 text-center border-[8px] border-double border-[#0f380f] m-4 shadow-md z-50"><span className="text-[#0f380f] text-[20px] leading-relaxed uppercase">GOAL!</span><span className="text-[#0f380f] text-[12px] mt-6 font-bold">STAGE {level} CLEAR</span><span className="text-[#306230] text-[12px] mt-10 animate-pulse uppercase">PRESS C</span></div>}
+                            {screen === 'GAME' && phase === 'LEVEL_CLEAR' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center p-6 text-center border-[8px] border-double border-[#0f380f] m-4 shadow-md z-50"><span className="text-[#0f380f] text-[20px] leading-relaxed uppercase">GOAL!</span><span className="text-[#0f380f] text-[12px] mt-6 font-bold">STAGE {level} CLEAR</span><span className="text-[#306230] text-[12px] mt-10 animate-pulse uppercase">PRESS Z</span></div>}
 
                             {screen === 'GAME' && phase === 'GAME_OVER' && <div className="absolute inset-0 bg-[#9bbc0f] flex flex-col items-center justify-center p-6 text-center border-[8px] border-double border-[#0f380f] m-4 shadow-md z-50"><span className="text-[#0f380f] text-[20px] leading-relaxed uppercase">GAME OVER!</span><span className="text-[#0f380f] text-[12px] mt-6 font-bold">FINAL SCORE: {score}</span><span className="text-[#306230] text-[10px] mt-10 animate-pulse uppercase">PRESS Z FOR MENU</span></div>}
                             
@@ -1159,7 +1159,7 @@
                                     <p className="text-[#0f380f] text-[12px] leading-snug uppercase font-bold text-left m-0 p-0 whitespace-pre-line tracking-tight">
                                       {displayedText}
                                     </p>
-                                    {!isTyping && (gameMode === 'TEACHER' || (gameMode === 'MASTER' && isWaitingForC)) && (
+                                    {!isTyping && (gameMode === 'TEACHER' || (gameMode === 'MASTER' && isWaitingForZ)) && (
                                       <div className="absolute bottom-0 right-0 bg-[#9bbc0f] border-[3px] border-[#0f380f] px-2 py-1 flex flex-col gap-1 z-20 pointer-events-auto">
                                         <div className="flex items-center text-[#0f380f] text-[10px] font-bold leading-none"><span className="w-3">{yesNoCursor === 0 ? '▶' : ''}</span>YES</div>
                                         <div className="flex items-center text-[#0f380f] text-[10px] font-bold leading-none"><span className="w-3">{yesNoCursor === 1 ? '▶' : ''}</span>NO</div>
@@ -1168,7 +1168,7 @@
                                   </div>
                                </div>
                             )}
-                            {screen === 'GAME' && phase === 'RESET_CONFIRM' && <div className="absolute inset-0 flex items-center justify-center z-50"><div className="bg-[#9bbc0f] border-[6px] border-double border-[#0f380f] p-6 shadow-xl text-center"><p className="text-[#0f380f] text-[16px] leading-relaxed uppercase mb-6">RESET?</p><div className="flex justify-between px-2 text-[#306230] text-[14px]"><span>C:YES</span><span>X:NO</span></div></div></div>}
+                            {screen === 'GAME' && phase === 'RESET_CONFIRM' && <div className="absolute inset-0 flex items-center justify-center z-50"><div className="bg-[#9bbc0f] border-[6px] border-double border-[#0f380f] p-6 shadow-xl text-center"><p className="text-[#0f380f] text-[16px] leading-relaxed uppercase mb-6">RESET?</p><div className="flex justify-between px-2 text-[#306230] text-[14px]"><span>Z:YES</span><span>X:NO</span></div></div></div>}
                          </div>
                      </div>
                      
@@ -1176,7 +1176,7 @@
                      <div className="mt-6 w-[328px] bg-[#333] rounded-full flex items-center justify-center py-2.5 shadow-lg border-b-[3px] border-[#111]">
                         <div className="flex justify-between w-full px-[14px] text-[#e0e0e0] font-sans font-bold text-[5.5px] tracking-widest uppercase whitespace-nowrap">
                             <span>ARROWS: MOVE/SEL</span>
-                            <span>C: YES</span>
+                            <span>Z: YES</span>
                             <span>X: NO</span>
                             <span>ENTER: PAUSE</span>
                             <span>SHIFT: RESET</span>
