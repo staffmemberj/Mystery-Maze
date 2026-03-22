@@ -198,14 +198,14 @@
           return 1;
         };
 
-        const getNextStep = (startX, startY, targetX, targetY, hw, vw) => {
+        const getFullPath = (startX, startY, targetX, targetY, hw, vw) => {
           const visited = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
           const queue = [{ x: startX, y: startY, path: [] }];
           visited[startY][startX] = true;
 
           while (queue.length > 0) {
             const { x, y, path } = queue.shift();
-            if (x === targetX && y === targetY) return path[0];
+            if (x === targetX && y === targetY) return path;
 
             const dirs = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
             for (let dir of dirs) {
@@ -223,6 +223,11 @@
             }
           }
           return null;
+        };
+
+        const getNextStep = (startX, startY, targetX, targetY, hw, vw) => {
+          const path = getFullPath(startX, startY, targetX, targetY, hw, vw);
+          return path && path.length > 0 ? path[0] : null;
         };
 
         const checkReachability = (startX, startY, targetX, targetY, testHWalls, testVWalls, avoidX = -1, avoidY = -1) => {
@@ -273,24 +278,45 @@
           return { hw, vw };
         };
 
+        // --- AUDIO FILE PLAYER ---
+        const sfxMap = {
+            'move': 'sounds/blip.mp3',
+            'confirm': 'sounds/ping.mp3',
+            'cancel': 'sounds/buzzer.mp3',
+            'bonk': 'sounds/buzzer.mp3',
+            'heal': 'sounds/chime.mp3',
+            'trap': 'sounds/alarm.mp3',
+            'clear': 'sounds/jingle.mp3',
+            'gameover': 'sounds/dirge.mp3'
+        };
+        
+        const playSfx = (type) => {
+            if (sfxMap[type]) {
+                const sound = new Audio(sfxMap[type]);
+                sound.play().catch(err => console.warn("Audio play blocked by browser:", err));
+            }
+        };
+
         function App() {
           const [initialData] = useState(() => {
-            const p = getRandomPos();
-            let s = getRandomPos();
-            while (s.x === p.x && s.y === p.y) s = getRandomPos();
-            
-            let c = getRandomPos();
-            while ((c.x === p.x && c.y === p.y) || (c.x === s.x && c.y === s.y)) c = getRandomPos();
-            
-            const v = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
-            v[p.y][p.x] = true;
-
-            let hm = { hw: [], vw: [] };
+            let p, s, c, hm;
             let valid = false;
             while(!valid) {
+               p = getRandomPos();
+               s = getRandomPos();
+               while (s.x === p.x && s.y === p.y) s = getRandomPos();
+               
+               c = getRandomPos();
+               while ((c.x === p.x && c.y === p.y) || (c.x === s.x && c.y === s.y)) c = getRandomPos();
+               
                hm = generateHiddenMaze();
-               valid = checkReachability(p.x, p.y, c.x, c.y, hm.hw, hm.vw, s.x, s.y) && checkReachability(c.x, c.y, s.x, s.y, hm.hw, hm.vw);
+               const starPath = getFullPath(p.x, p.y, s.x, s.y, hm.hw, hm.vw);
+               
+               valid = starPath && starPath.length >= 5 && checkReachability(p.x, p.y, c.x, c.y, hm.hw, hm.vw, s.x, s.y) && checkReachability(c.x, c.y, s.x, s.y, hm.hw, hm.vw);
             }
+
+            const v = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
+            v[p.y][p.x] = true;
 
             return { p, s, c, f: getInitialFacing(p), v, hm };
           });
@@ -423,6 +449,7 @@
               if (trapStep === 'WARN_CHECK') {
                  if (hp <= 0) {
                     setPhase('GAME_OVER');
+                    playSfx('gameover');
                  } else {
                     setBotAlignment('GOOD');
                     setDialogSpeaker('ROBOT');
@@ -534,46 +561,48 @@
           // Maximize the scale factor flawlessly to the edges of the monitor
           useEffect(() => {
             const updateScale = () => {
-              if (!consoleRef.current) { setScale(1); return; }
-              const vw = window.innerWidth, vh = window.innerHeight;
-              
-              const cw = isMobile ? 360 : 340; 
-              const ch = isMobile ? 740 : 400;
-              
-              setScale(Math.max(1, Math.floor(Math.min(vw / cw, vh / ch))));
-            };
-            updateScale();
-            window.addEventListener('resize', updateScale);
-            return () => window.removeEventListener('resize', updateScale);
-          }, [isMobile, screen]);
-
-          const startNewStage = (mode, isReset) => {
-            const p = getRandomPos();
-            let s = getRandomPos();
-            while (s.x === p.x && s.y === p.y) s = getRandomPos();
+            if (!consoleRef.current) { setScale(1); return; }
+            const vw = window.innerWidth, vh = window.innerHeight;
             
-            let c = getRandomPos();
-            while ((c.x === p.x && c.y === p.y) || (c.x === s.x && c.y === s.y)) c = getRandomPos();
+            const cw = isMobile ? 360 : 340; 
+            const ch = isMobile ? 740 : 400;
             
-            let hm = { hw: [], vw: [] };
-            let valid = false;
-            while(!valid) {
-               hm = generateHiddenMaze();
-               valid = checkReachability(p.x, p.y, c.x, c.y, hm.hw, hm.vw, s.x, s.y) && checkReachability(c.x, c.y, s.x, s.y, hm.hw, hm.vw);
-            }
+            setScale(Math.max(1, Math.floor(Math.min(vw / cw, vh / ch))));
+          };
+          updateScale();
+          window.addEventListener('resize', updateScale);
+          return () => window.removeEventListener('resize', updateScale);
+        }, [isMobile, screen]);
 
-            const v = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
-            
-            if (mode === 'MASTER' || mode === 'TEACHER') {
-                // Fully reveal the map for Master and Teacher
-                for(let r=0; r<GRID_SIZE; r++) for(let col=0; col<GRID_SIZE; col++) v[r][col] = true;
-            } else {
-                // Dark room for Hero
-                v[p.y][p.x] = true;
-            }
+        const startNewStage = (mode, isReset) => {
+          let p, s, c, hm;
+          let valid = false;
+          while(!valid) {
+             p = getRandomPos();
+             s = getRandomPos();
+             while (s.x === p.x && s.y === p.y) s = getRandomPos();
+             
+             c = getRandomPos();
+             while ((c.x === p.x && c.y === p.y) || (c.x === s.x && c.y === s.y)) c = getRandomPos();
+             
+             hm = generateHiddenMaze();
+             const starPath = getFullPath(p.x, p.y, s.x, s.y, hm.hw, hm.vw);
+             
+             valid = starPath && starPath.length >= 5 && checkReachability(p.x, p.y, c.x, c.y, hm.hw, hm.vw, s.x, s.y) && checkReachability(c.x, c.y, s.x, s.y, hm.hw, hm.vw);
+          }
 
-            setPlayerPos(p); setStarPos(s); setHeartPos(c); setFacing(getInitialFacing(p)); 
-            setVisited(v); 
+          const v = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(false));
+          
+          if (mode === 'MASTER' || mode === 'TEACHER') {
+              // Fully reveal the map for Master and Teacher
+              for(let r=0; r<GRID_SIZE; r++) for(let col=0; col<GRID_SIZE; col++) v[r][col] = true;
+          } else {
+              // Dark room for Hero
+              v[p.y][p.x] = true;
+          }
+
+          setPlayerPos(p); setStarPos(s); setHeartPos(c); setFacing(getInitialFacing(p)); 
+          setVisited(v); 
             
             if (isReset) {
                 setScore(500);
@@ -628,18 +657,26 @@
             if (dir === 'UP') y -= 1; if (dir === 'DOWN') y += 1; if (dir === 'LEFT') x -= 1; if (dir === 'RIGHT') x += 1;
             setPlayerPos({ x, y });
             setScore(prev => Math.max(0, prev - 10));
+            playSfx('move');
             
             if (heartPos && x === heartPos.x && y === heartPos.y) {
                 setHp(prev => Math.min(4, prev + 2));
                 setHeartPos(null);
+                playSfx('heal');
                 setFloatText({ x, y, text: "+2 HP" });
                 setTimeout(() => setFloatText(null), 1000);
             }
             
             setVisited(prev => { const n = prev.map(r => [...r]); n[y][x] = true; return n; });
             
-            if (x === starPos.x && y === starPos.y) setPhase('LEVEL_CLEAR');
-            else { setPhase('STUDENT_TURN'); setBotMessage(""); setIsWaitingForZ(false); }
+            if (x === starPos.x && y === starPos.y) {
+                setPhase('LEVEL_CLEAR');
+                playSfx('clear');
+            } else { 
+                setPhase('STUDENT_TURN'); 
+                setBotMessage(""); 
+                setIsWaitingForZ(false); 
+            }
           };
 
           const askDirection = (dir) => {
@@ -661,16 +698,21 @@
                  if (botAlignment === 'EVIL' && dir === botSuggestedDir) {
                     setPhase('HERO_TRAPPED');
                     setTrapStep('FLASH');
+                    playSfx('trap');
                     setFloatText({ x: playerPos.x, y: playerPos.y, text: "BONK!" });
                     setBotMessage(""); // Clear text box instantly
                  } else {
                     // Standard wall hit
+                    playSfx('bonk');
                     setFloatText({ x: playerPos.x, y: playerPos.y, text: "BONK!" });
                     setTimeout(() => setFloatText(null), 1000);
                     
                     const nextHp = Math.max(0, hp - 1);
                     setHp(nextHp);
-                    if (nextHp <= 0) setPhase('GAME_OVER');
+                    if (nextHp <= 0) {
+                        setPhase('GAME_OVER');
+                        playSfx('gameover');
+                    }
                  }
               } else {
                  // Open path! Move to it
@@ -730,59 +772,68 @@
                   setBotMessage("OUCH! A WALL!");
                   setScore(s => Math.max(0, s - 20));
                   setFloatText({ x: playerPos.x, y: playerPos.y, text: "BONK!" });
+                  playSfx('bonk');
                   
                   const nextHp = Math.max(0, hp - 1);
                   setHp(nextHp);
                   
                   setTimeout(() => { 
-                      if (nextHp <= 0) setPhase('GAME_OVER');
-                      else { setPhase('STUDENT_TURN'); setBotMessage(""); }
+                      if (nextHp <= 0) {
+                          setPhase('GAME_OVER');
+                          playSfx('gameover');
+                      } else { 
+                          setPhase('STUDENT_TURN'); 
+                          setBotMessage(""); 
+                      }
                   }, 1500);
                }
             } else { // Master says NO
                if (!isOpen) { // We stopped them from hitting a wall
                   setBotMessage("GOOD CATCH!");
+                  playSfx('confirm');
                   setTimeout(() => { setPhase('STUDENT_TURN'); setBotMessage(""); }, 1000);
                } else if (!isCorrect) { // We stopped them from going the wrong way down an open path
                   setBotMessage("GOOD CALL!");
+                  playSfx('confirm');
                   setTimeout(() => { setPhase('STUDENT_TURN'); setBotMessage(""); }, 1000);
                } else { // We stopped them from going the right way
                   setBotMessage("THAT'S THE WAY!");
                   setScore(s => Math.max(0, s - 20));
                   setFloatText({ x: playerPos.x, y: playerPos.y, text: "-20" });
+                  playSfx('cancel');
                   setTimeout(() => { setPhase('STUDENT_TURN'); setBotMessage(""); }, 1500);
                }
             }
           };
 
           const handleStart = () => {
-            if (screen === 'TITLE') setScreen('MENU');
+            if (screen === 'TITLE') { setScreen('MENU'); playSfx('confirm'); }
             else if (screen === 'GAME') {
-              if (phase === 'PAUSED') setPhase(prevPhase || 'STUDENT_TURN');
-              else if (phase !== 'GAME_OVER' && phase !== 'RESET_CONFIRM') { setPrevPhase(phase); setPhase('PAUSED'); setMenuCursor(0); }
+              if (phase === 'PAUSED') { setPhase(prevPhase || 'STUDENT_TURN'); playSfx('confirm'); }
+              else if (phase !== 'GAME_OVER' && phase !== 'RESET_CONFIRM') { setPrevPhase(phase); setPhase('PAUSED'); setMenuCursor(0); playSfx('confirm'); }
             }
           };
 
           const handleSelect = () => { 
             if (screen === 'GAME') { 
-              if (phase === 'GAME_OVER') setScreen('MENU'); 
-              else if (phase !== 'PAUSED' && phase !== 'RESET_CONFIRM') { setPrevPhase(phase); setPhase('RESET_CONFIRM'); } 
+              if (phase === 'GAME_OVER') { setScreen('MENU'); playSfx('confirm'); }
+              else if (phase !== 'PAUSED' && phase !== 'RESET_CONFIRM') { setPrevPhase(phase); setPhase('RESET_CONFIRM'); playSfx('confirm'); } 
             } 
           };
 
           const handleZ = () => {
-            if (screen === 'TITLE') { setScreen('MENU'); }
+            if (screen === 'TITLE') { setScreen('MENU'); playSfx('confirm'); }
             else if (screen === 'MENU') {
               const act = activeMainMenuItems[menuCursor]?.id;
-              if (act === 'HERO') { setGameMode('HERO'); resetGame('HERO'); setScreen('GAME'); }
-              else if (act === 'MASTER') { setGameMode('MASTER'); resetGame('MASTER'); setScreen('GAME'); }
-              else if (act === 'TEACHER') { setGameMode('TEACHER'); resetGame('TEACHER'); setScreen('GAME'); }
+              if (act === 'HERO') { setGameMode('HERO'); resetGame('HERO'); setScreen('GAME'); playSfx('confirm'); }
+              else if (act === 'MASTER') { setGameMode('MASTER'); resetGame('MASTER'); setScreen('GAME'); playSfx('confirm'); }
+              else if (act === 'TEACHER') { setGameMode('TEACHER'); resetGame('TEACHER'); setScreen('GAME'); playSfx('confirm'); }
             }
             else if (screen === 'GAME') {
               if (phase === 'PAUSED') {
                 const act = activePauseMenuItems[menuCursor]?.id;
-                if (act === 'RESUME') setPhase(prevPhase || 'STUDENT_TURN');
-                else if (act === 'QUIT') setScreen('TITLE');
+                if (act === 'RESUME') { setPhase(prevPhase || 'STUDENT_TURN'); playSfx('confirm'); }
+                else if (act === 'QUIT') { setScreen('TITLE'); playSfx('cancel'); }
               }
               else if (phase === 'TEACHER_TURN') {
                 if (isTyping) {
@@ -794,13 +845,15 @@
                 
                 if (gameMode === 'MASTER' && isWaitingForZ) {
                    handleMasterResponse(yesNoCursor === 0);
+                   playSfx('confirm');
                 } else if (gameMode === 'TEACHER') {
                    handleTeacherResponse(yesNoCursor === 0);
+                   playSfx('confirm');
                 }
               } 
-              else if (phase === 'LEVEL_CLEAR') startNewStage(gameMode, false);
-              else if (phase === 'RESET_CONFIRM') resetGame();
-              else if (phase === 'GAME_OVER') setScreen('MENU');
+              else if (phase === 'LEVEL_CLEAR') { startNewStage(gameMode, false); playSfx('confirm'); }
+              else if (phase === 'RESET_CONFIRM') { resetGame(); playSfx('confirm'); }
+              else if (phase === 'GAME_OVER') { setScreen('MENU'); playSfx('confirm'); }
             }
           };
 
@@ -815,12 +868,14 @@
               
               if (gameMode === 'MASTER' && isWaitingForZ) {
                  handleMasterResponse(false);
+                 playSfx('cancel');
               } else if (gameMode === 'TEACHER') {
                  handleTeacherResponse(false);
+                 playSfx('cancel');
               }
             }
-            else if (screen === 'GAME' && phase === 'RESET_CONFIRM') { setPhase(prevPhase || 'STUDENT_TURN'); setPrevPhase(null); }
-            else if (screen === 'MENU') setScreen('TITLE');
+            else if (screen === 'GAME' && phase === 'RESET_CONFIRM') { setPhase(prevPhase || 'STUDENT_TURN'); setPrevPhase(null); playSfx('cancel'); }
+            else if (screen === 'MENU') { setScreen('TITLE'); playSfx('cancel'); }
           };
 
           const handleDir = (d) => {
@@ -828,14 +883,16 @@
               const max = activeMainMenuItems.length - 1;
               if (d === 'UP') setMenuCursor(p => (p > 0 ? p - 1 : max));
               if (d === 'DOWN') setMenuCursor(p => (p < max ? p + 1 : 0));
+              playSfx('move');
             } else if (screen === 'GAME' && phase === 'PAUSED') {
               const max = activePauseMenuItems.length - 1;
               if (d === 'UP') setMenuCursor(p => (p > 0 ? p - 1 : max));
               if (d === 'DOWN') setMenuCursor(p => (p < max ? p + 1 : 0));
+              playSfx('move');
             } else if (screen === 'GAME' && phase === 'TEACHER_TURN') {
               if (!isTyping && (gameMode === 'MASTER' || gameMode === 'TEACHER')) {
-                 if (d === 'UP' || d === 'LEFT') setYesNoCursor(0);
-                 if (d === 'DOWN' || d === 'RIGHT') setYesNoCursor(1);
+                 if (d === 'UP' || d === 'LEFT') { setYesNoCursor(0); playSfx('move'); }
+                 if (d === 'DOWN' || d === 'RIGHT') { setYesNoCursor(1); playSfx('move'); }
               }
             } else if (screen === 'GAME' && phase === 'STUDENT_TURN') {
               askDirection(d);
