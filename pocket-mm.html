@@ -346,6 +346,9 @@
           const [botSuggestedDir, setBotSuggestedDir] = useState(null);
           const [botMessage, setBotMessage] = useState("");
           
+          const [rejectedDirs, setRejectedDirs] = useState([]); // Master Mode short-term memory
+          const [lastMoveDir, setLastMoveDir] = useState(null); // Prevent backward guessing
+          
           // Trap sequence specific states
           const [trapStep, setTrapStep] = useState('NONE');
           const [flashToggle, setFlashToggle] = useState(false);
@@ -492,21 +495,16 @@
                        return false;
                     };
 
-                    // Evil bot ALWAYS picks a direction that points into an internal wall (not a boundary)
-                    const internalWallDirs = allDirs.filter(d => getWallCheck(playerPos.x, playerPos.y, d, hiddenMaze.hw, hiddenMaze.vw) === 1 && !isBoundary(d));
+                    // Pick ANY wrong direction that does not strictly hit the outer boundary of the map
+                    // This creates maximum randomness, suggesting either internal walls OR open wrong paths!
+                    const nonBoundaryWrongDirs = allDirs.filter(d => d !== nextDir && !isBoundary(d));
                     
-                    if (internalWallDirs.length > 0) {
-                       displayDir = internalWallDirs[Math.floor(Math.random() * internalWallDirs.length)];
+                    if (nonBoundaryWrongDirs.length > 0) {
+                       displayDir = nonBoundaryWrongDirs[Math.floor(Math.random() * nonBoundaryWrongDirs.length)];
                     } else {
-                       // Fallback: Any wrong direction that is NOT an outer boundary
-                       const nonBoundaryWrongDirs = allDirs.filter(d => d !== nextDir && !isBoundary(d));
-                       if (nonBoundaryWrongDirs.length > 0) {
-                           displayDir = nonBoundaryWrongDirs[Math.floor(Math.random() * nonBoundaryWrongDirs.length)];
-                       } else {
-                           // Absolute fallback (rare edge case)
-                           const wrongDirs = allDirs.filter(d => d !== nextDir);
-                           displayDir = wrongDirs[Math.floor(Math.random() * wrongDirs.length)];
-                       }
+                       // Absolute fallback (rare edge case)
+                       const wrongDirs = allDirs.filter(d => d !== nextDir);
+                       displayDir = wrongDirs[Math.floor(Math.random() * wrongDirs.length)];
                     }
                  }
 
@@ -520,18 +518,29 @@
           // Update Master AI Logic (Master Mode)
           useEffect(() => {
             if (screen === 'GAME' && gameMode === 'MASTER' && phase === 'STUDENT_TURN') {
-              // AI only cares about reaching the exit
               const targetX = starPos.x;
               const targetY = starPos.y;
               const correctDir = getNextStep(playerPos.x, playerPos.y, targetX, targetY, hiddenMaze.hw, hiddenMaze.vw);
 
+              const opposites = { 'UP': 'DOWN', 'DOWN': 'UP', 'LEFT': 'RIGHT', 'RIGHT': 'LEFT' };
+              const backwardDir = lastMoveDir ? opposites[lastMoveDir] : null;
+
               const dirs = ['UP', 'DOWN', 'LEFT', 'RIGHT'];
-              let askDir = correctDir;
               
-              // 30% chance to make a mistake and ask a wrong direction
-              if (Math.random() < 0.3) {
-                 askDir = dirs[Math.floor(Math.random() * dirs.length)];
+              // Exclude the direction we just came from to prevent silly backtracking,
+              // UNLESS backwards is currently the correct path (e.g. escaping a dead end)
+              const availableDirs = dirs.filter(d => d !== backwardDir || d === correctDir);
+
+              let untestedDirs = availableDirs.filter(d => !rejectedDirs.includes(d));
+              
+              // If all valid directions were rejected, clear memory and start fresh!
+              if (untestedDirs.length === 0) {
+                  setRejectedDirs([]);
+                  untestedDirs = availableDirs;
               }
+              
+              // True randomness: the bot guesses uniformly from ALL untried directions!
+              const askDir = untestedDirs[Math.floor(Math.random() * untestedDirs.length)];
 
               setBotAlignment('GOOD'); // Master mode only uses the Good bot avatar
 
@@ -548,7 +557,7 @@
                  return () => clearTimeout(timer);
               }
             }
-          }, [phase, gameMode, playerPos, starPos, hiddenMaze, screen]);
+          }, [phase, gameMode, playerPos, starPos, hiddenMaze, screen, rejectedDirs, lastMoveDir]);
 
           useEffect(() => {
             const checkMobile = () => /Mobi|Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth <= 768;
@@ -625,6 +634,8 @@
             setBotAlignment('GOOD');
             setBotSuggestedDir(null);
             setTrapStep('NONE');
+            setRejectedDirs([]);
+            setLastMoveDir(null);
             
             setPhase('STUDENT_TURN'); setRequestedDir(null); 
             setBotMessage(""); setIsWaitingForZ(false); setDialogSpeaker('ROBOT');
@@ -656,6 +667,8 @@
             let { x, y } = playerPos;
             if (dir === 'UP') y -= 1; if (dir === 'DOWN') y += 1; if (dir === 'LEFT') x -= 1; if (dir === 'RIGHT') x += 1;
             setPlayerPos({ x, y });
+            setRejectedDirs([]);
+            setLastMoveDir(dir);
             setScore(prev => Math.max(0, prev - 10));
             playSfx('move');
             
@@ -689,30 +702,35 @@
               
               const hiddenWall = getWallCheck(playerPos.x, playerPos.y, dir, hiddenMaze.hw, hiddenMaze.vw);
               
+              // DID THE PLAYER FALL FOR THE EVIL TRAP?
+              if (botAlignment === 'EVIL' && dir === botSuggestedDir) {
+                 setPhase('HERO_TRAPPED');
+                 setTrapStep('FLASH');
+                 playSfx('trap');
+                 
+                 // Show Trap text. If it was a solid wall, also register the wall internally.
+                 setFloatText({ x: playerPos.x, y: playerPos.y, text: "TRAP!" });
+                 if (hiddenWall === 1) { setWallState(playerPos.x, playerPos.y, dir, 1); }
+                 
+                 setBotMessage(""); // Clear text box instantly
+                 return;
+              }
+
               if (hiddenWall === 1) {
                  // BONK! Hit a hidden wall.
                  setWallState(playerPos.x, playerPos.y, dir, 1); 
                  setScore(s => Math.max(0, s - 20));
                  
-                 // DID THE PLAYER FALL FOR THE EVIL TRAP?
-                 if (botAlignment === 'EVIL' && dir === botSuggestedDir) {
-                    setPhase('HERO_TRAPPED');
-                    setTrapStep('FLASH');
-                    playSfx('trap');
-                    setFloatText({ x: playerPos.x, y: playerPos.y, text: "BONK!" });
-                    setBotMessage(""); // Clear text box instantly
-                 } else {
-                    // Standard wall hit
-                    playSfx('bonk');
-                    setFloatText({ x: playerPos.x, y: playerPos.y, text: "BONK!" });
-                    setTimeout(() => setFloatText(null), 1000);
-                    
-                    const nextHp = Math.max(0, hp - 1);
-                    setHp(nextHp);
-                    if (nextHp <= 0) {
-                        setPhase('GAME_OVER');
-                        playSfx('gameover');
-                    }
+                 // Standard wall hit
+                 playSfx('bonk');
+                 setFloatText({ x: playerPos.x, y: playerPos.y, text: "BONK!" });
+                 setTimeout(() => setFloatText(null), 1000);
+                 
+                 const nextHp = Math.max(0, hp - 1);
+                 setHp(nextHp);
+                 if (nextHp <= 0) {
+                     setPhase('GAME_OVER');
+                     playSfx('gameover');
                  }
               } else {
                  // Open path! Move to it
@@ -774,6 +792,7 @@
                   setFloatText({ x: playerPos.x, y: playerPos.y, text: "BONK!" });
                   playSfx('bonk');
                   
+                  setRejectedDirs(prev => [...prev, requestedDir]);
                   const nextHp = Math.max(0, hp - 1);
                   setHp(nextHp);
                   
@@ -788,6 +807,8 @@
                   }, 1500);
                }
             } else { // Master says NO
+               setRejectedDirs(prev => [...prev, requestedDir]);
+               
                if (!isOpen) { // We stopped them from hitting a wall
                   setBotMessage("GOOD CATCH!");
                   playSfx('confirm');
@@ -797,11 +818,11 @@
                   playSfx('confirm');
                   setTimeout(() => { setPhase('STUDENT_TURN'); setBotMessage(""); }, 1000);
                } else { // We stopped them from going the right way
-                  setBotMessage("THAT'S THE WAY!");
-                  setScore(s => Math.max(0, s - 20));
-                  setFloatText({ x: playerPos.x, y: playerPos.y, text: "-20" });
+                  setBotMessage("HMM, OKAY...");
                   playSfx('cancel');
-                  setTimeout(() => { setPhase('STUDENT_TURN'); setBotMessage(""); }, 1500);
+                  
+                  // NO PENALTY! Master shouldn't be punished for saying NO
+                  setTimeout(() => { setPhase('STUDENT_TURN'); setBotMessage(""); }, 1000);
                }
             }
           };
@@ -917,7 +938,7 @@
             };
             window.addEventListener('keydown', hk);
             return () => window.removeEventListener('keydown', hk);
-          }, [screen, phase, playerPos, hWalls, vWalls, requestedDir, facing, menuCursor, isWaitingForZ, botMessage, dialogSpeaker, starPos, heartPos, gameMode, isMobile, isTyping, level, hp, hiddenMaze, yesNoCursor, botSuggestedDir, botAlignment]);
+          }, [screen, phase, playerPos, hWalls, vWalls, requestedDir, facing, menuCursor, isWaitingForZ, botMessage, dialogSpeaker, starPos, heartPos, gameMode, isMobile, isTyping, level, hp, hiddenMaze, yesNoCursor, botSuggestedDir, botAlignment, rejectedDirs]);
 
           const drawSprite = (ctx, sx, sy, spr, ps = 1) => {
             for (let r = 0; r < spr.length; r++) {
